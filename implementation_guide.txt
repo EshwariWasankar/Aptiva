@@ -1,0 +1,5241 @@
+Aptiva — End-to-End Implementation Guide
+Version 1.0 · 21 October 2026 · Audience: a new AI coding agent with no access to earlier conversations · Status: specification only, no code written yet
+Table of contents
+Part I — Project definition:
+ 0 Conventions · 1 Overview · 2 Scope and requirements · 3 Roles · 4 Workflows 
+Part II — Architecture:
+ 5 Architecture · 6 Stack and versions 
+Part III — UI/UX and frontend:
+ 7 Screens · 8 Components · 9 Frontend plan 
+Part IV — Backend and APIs:
+ 10 Backend · 11 API specification 
+Part V — Data:
+ 12 Database · 13 Migrations · 14 Datasets · 15 Data pipeline 
+Part VI — Estimation and ML:
+ 16 Problem definition · 17 Development · 18 Inference · 19 Monitoring · 20 ML testing 
+Part VII — Security and reliability:
+ 21 Security · 22 Privacy · 23 Reliability 
+Part VIII — Quality:
+ 24 Test strategy · 25 Definition of done 
+Part IX — Deployment:
+ 26 Hosting · 27 Environments · 28 CI/CD · 29 SEO, performance, accessibility · 30 Monitoring and maintenance 
+Part X — Repository:
+ 31 Structure · 32 Dependencies · 33 Documentation 
+Part XI — Roadmap:
+ 34 Phases · 35 Phase specifications · 36 Prioritisation · 37 First milestone 
+Part XII — Handover:
+ 38 Acceptance checklist · 39 Traceability · 40 Risks and decisions · 41 Agent instructions · 42 Glossary · 43 Self-audit
+PART I — PROJECT DEFINITION
+0. Conventions and source handling
+Status tags.
+ Every decision carries one: 
+[C]
+ confirmed by the team, 
+[P]
+ proposed default (change only with approval), 
+[A]
+ assumption, 
+[U]
+ unresolved. Untagged text is explanation.
+Sources of truth, in priority order:
+ (1) the v2 correction note and the v2 revised sections (15 Oct 2026); (2) the v1 Project Document (3 Oct 2026); (3) the first Implementation Guide (15 Oct 2026); (4) decisions in this guide marked [P].
+Identifier scheme.
+ Requirements FR-, NFR-, DATA-, ML-, SEC-; screens P-; workflows W-; endpoints E-; phases PH-; tasks PH#-T##; tests T-; decisions D-; conflicts C-.
+Conflict register.
+ Where the sources disagreed, this guide resolves as follows.
+ID
+Conflict
+Resolution
+C-01
+v1 puts ML, skill model and planner in a Python service; v2 moves them into NestJS
+v2 wins [C]: engine runs in TypeScript; Python is offline batch only
+C-02
+v1 offers a MERN fallback
+Removed [C]
+C-03
+v1 uses IRT/BKT in later versions; v2 defers them
+Deferred beyond MVP, gate is more than 500 attempts per item [C]
+C-04
+v1 Sprint Pass is 14 or 30 days; v2 says 7–14 days and adds a Season Pass
+v2 wins [C]
+C-05
+v2 workflow lists three diagnostic areas; v1 has four including Data Interpretation
+Four areas kept because v1 examples depend on DI [P], see D-03
+C-06
+v1 lists data export and account deletion as P1; v1 Section 12A requires them
+Both are MUST before any pilot with real students [P], see D-07
+C-07
+v1 includes LLM explanation and hint features; the first guide excludes LLMs from the MVP
+LLM features are post-MVP and optional [P], see D-06
+C-08
+v1 uses SSE for timers and notifications
+Not used in the MVP; timers run in the browser and status uses polling [P]
+Added in revision 2.
+ID
+Conflict
+Resolution
+C-09
+The workflow header says Stage 1 takes the first 10–12 minutes, and v1 targets a first plan in under 10 minutes including the diagnostic, but the standard diagnostic is 24–30 questions and about 30 minutes
+Offer two paths [P]: the standard diagnostic (about 30 minutes, recommended when the test is more than 48 hours away) and the express diagnostic (10–15 minutes). The 10–12 minute target applies to the express path; both durations are measured in the pilot. See D-14
+1. Project overview
+Item
+Content
+Name
+Aptiva
+ [C] (renamed from PrepPilot)
+Context
+A Web Technologies course project that is also designed as a product. Placement hiring in India is gated by online aptitude assessments; the first round eliminates most candidates.
+Problem
+Students have abundant practice material but no way to decide how to spend limited time. They lack: an assessment-specific target level, the cause of lost marks, visibility of speed, a plan that fits days (not weeks), and a view of how current a test pattern is.
+Solution
+A planning layer above question banks. It combines the student's measured ability (accuracy, speed, error causes), the target assessment's blueprint, and the time available, then produces a time-boxed daily plan that is recomputed after every session.
+Users
+Final-year engineering students (primary); pre-final-year students; off-campus aspirants; internal content admins and reviewers.
+Core objectives
+(1) Per-topic Readiness Gap with sources and confidence. (2) Time-boxed plan maximising expected gain per minute. (3) Error-cause and speed diagnosis. (4) Adaptive re-planning. (5) Pilot-measured impact.
+Differentiator
+The combination of assessment-specific target, time-boxed optimisation, error-cause diagnosis and speed readiness. Not the size of the question bank.
+Role of ML
+Classical statistical estimation and rules (Elo/Glicko-2 with uncertainty, EMA, rule-based error inference, priority scoring, knapsack planning). 
+No trained model is needed for the MVP.
+ Estimation is essential to the core product, but it is not a learned model. Python batch jobs (duplicate detection, item statistics) are optional enhancements.
+Deliverables
+Student web app (responsive, PWA-ready), admin console, a reviewed question bank (target 400–600 items), 8–10 assessment blueprints with provenance, deployed system with CI/CD, documentation set, pilot evaluation.
+Problem, solution and implemented functionality are different things.
+ Pricing, community and coding modules appear in the product vision but are outside the MVP (Section 2).
+2. Scope, constraints and requirements
+2.1 Scope
+Class
+Items
+MUST (MVP, priority P0)
+Auth and consent; setup diagnostic; server-side timing and marking; result analysis; error-cause feedback; baseline profile; requirements form; blueprint catalogue with provenance and generic fallback; Readiness Gap dashboard; time-boxed planner with Why this; practice runner (MCQ and numeric); post-session recalculation; What changed summary; basic reassessment; mistake notebook; concept-repair lessons; admin console (questions, import, blueprints); data export and account deletion; security baseline; deployment with CI/CD
+SHOULD (P1)
+Re-plan after missed days, cram mode, plan history and restore, keep-my-plan setting, pins; multiple targets; commitment streak; external score log; pattern reports; payments (free tier, Sprint Pass, Season Pass); reminders; adaptive follow-up beyond the simple rule; Hindi interface
+COULD (P2/P3)
+Information-based adaptive diagnostic; IRT and BKT; ILP planner and bandits; embeddings in pgvector; LLM explanations and hints; community and percentile; coding and interview modules; offline practice
+OUT OF SCOPE
+Coding assessments, interview prep, live classes, job board, proctoring, native mobile apps, any chatbot or open chat window
+2.2 Constraints
+Stack fixed [C]: Next.js, NestJS, PostgreSQL with Prisma, Redis. No MongoDB or Express.
+No fabricated cutoffs. Targets are internal planning bands with provenance labels [C].
+No leaked company questions, no scraped paid banks [C].
+Team: five students over one semester [C]. Budget and hosting provider: 
+[U]
+, see D-05.
+Question and company data come from GitHub repositories and one Kaggle dataset [C]. The Kaggle dataset has not been named [U], see D-01.
+Readiness is shown as a range with a confidence badge, never as a guarantee [C].
+2.3 Functional requirements
+ID
+Requirement
+Pri
+Acceptance criterion
+FR-001
+Register and log in with email or Google; consent version stored
+P0
+Registration stores a consent record with notice version; Google login works; wrong password returns a generic error
+FR-002
+Student profile: graduation year, branch, optional college, language
+P0
+Profile saved and editable; no phone, DOB or government ID requested
+FR-003
+Setup diagnostic of 24–30 mixed MCQ and numerical questions across Quant, Logical Reasoning, DI and Verbal, about 30 min, pause and resume once; express version of 10–15 min
+P0
+Test composition roughly 30/45/25 easy/medium/hard; second pause is refused; express flagged as coarse
+FR-004
+Server-side marking and timestamps for every attempt
+P0
+Client cannot obtain the answer key before submission; 
+time_ms
+ derives from server times
+FR-005
+Result analysis: topic and difficulty accuracy, time vs expected, skip patterns, consistency
+P0
+Result endpoint returns all five measures for a completed diagnostic
+FR-006
+Error-cause feedback for wrong, skipped and slow items, with student report as primary label
+P0
+A student report is never overwritten; conflicts add an optional dismissible note only
+FR-007
+Baseline profile with interval and evidence counts per topic
+P0
+Topics below 15 attempts across two sessions are labelled 
+early estimate
+FR-008
+Preparation requirements form with validation
+P0
+Past dates, below-minimum time and deadline after test date are rejected
+FR-009
+Blueprint catalogue with provenance, confidence, freshness and a generic fallback
+P0
+Unknown assessment yields the generic blueprint with an 
+unverified
+ notice
+FR-010
+Readiness Gap dashboard: current vs target band, readiness band, priority ranking, low-priority list
+P0
+Every bar shows a band, a confidence badge and an evidence count
+FR-011
+Time-boxed planner for 15/30/45/60/120 minutes
+P0
+Block minutes sum exactly to the budget; same input gives same plan
+FR-012
+Every plan item stores a rationale JSON; Why this? renders from it
+P0
+Rationale values equal those used for scoring; panel states what would change the item
+FR-013
+Practice runner with timers; MCQ and numeric entry
+P0
+Numeric input validated; unparseable text does not consume the attempt
+FR-014
+One-tap error tag after each miss
+P0
+Tag stored within one request; editable later
+FR-015
+Post-session recalculation after a flush barrier
+P0
+Profile and plan update only after all session attempts are persisted
+FR-016
+What changed and why summary after each plan update; plan history
+P0 summary, P1 history
+Summary lists top three changes; no silent changes
+FR-017
+Reassessment on demand using unseen items from the same topic and difficulty cells
+P0
+Reassessment items exclude previously served items; comparison with baseline returned
+FR-018
+Mistake notebook with cause tag and retry date
+P0
+Every wrong attempt appears with its cause
+FR-019
+Concept-repair lessons with 3–5 targeted questions
+P0
+Each weak topic has at least one reviewed lesson
+FR-020
+Admin console: question CRUD with KaTeX, tagging, bulk import, blueprint editor
+P0
+Dry-run import lists accepted, rejected and duplicate rows
+FR-021
+Re-plan and cram mode (test within 48 hours)
+P1
+Changing 60 to 20 minutes re-plans with no backlog; cram excludes new heavy topics
+FR-022
+Multiple targets split by date and priority
+P1
+Two targets produce one coherent plan
+FR-023
+Commitment streak, one rest day, neutral wording
+P1
+Streak completes and then offers a new commitment
+FR-024
+External score log (manual and CSV)
+P1
+Logged scores appear as tagged evidence
+FR-025
+Pattern reports (structure only), reputation-weighted, admin-reviewed
+P1
+No question text accepted in a report
+FR-026
+Billing: Free (diagnostic and Readiness Gap), Sprint Pass (7–14 days), Season Pass (1–3 months)
+P1
+Webhook grants access immediately; webhooks idempotent
+FR-027
+Data export, correction, deletion and consent withdrawal
+P0 (before pilot)
+Export returns JSON or CSV; deletion completes within 30 days
+FR-028
+Reminders, weekly summary
+P1
+Opt-in; student-set limit
+2.4 Non-functional requirements
+ID
+Requirement
+Acceptance criterion
+NFR-001
+Read APIs p95 under 300 ms; test start under 2 s
+k6 report on staging
+NFR-002
+Plan generation under 1 s from cached state; planner budget 250 ms then fallback
+Forced-slow test returns fallback plan with 
+planner_method = fallback
+NFR-003
+Answer submission returns feedback without waiting on PostgreSQL
+Submission p95 under 150 ms with the database paused
+NFR-004
+Availability 99.5% for MVP; practice continues if analytics are delayed
+Recalculation outage does not block practice
+NFR-005
+Server timestamps authoritative; clock drift detected
+Tampered client time has no effect on stored 
+time_ms
+NFR-006
+OWASP Top 10 coverage; sanitised rich content
+ZAP baseline and authorization suite pass
+NFR-007
+WCAG 2.1 AA targets, keyboard and screen-reader support
+axe scan has no serious violations on core screens
+NFR-008
+Concurrency: load test to a stated target; 5,000 concurrent is the product goal, course target is [P] 500
+k6 run at the target with no data loss
+NFR-009
+Privacy aligned with India's DPDP Act, 2023 (to be confirmed with counsel)
+Privacy checklist (Section 22) complete
+NFR-010
+Mobile-first responsive interface
+Core flows usable at 360 px width
+2.5 Data and ML requirements
+ID
+Requirement
+Acceptance criterion
+DATA-001
+Every question records source, author, reviewer and status
+No 
+published
+ question lacks a source
+DATA-002
+Every import is a traceable batch that can be reversed
+Deleting a batch removes only its items
+DATA-003
+Diagnostic and reassessment items use disjoint pools
+No item appears twice for one student across those contexts
+DATA-004
+Minimum bank depth of 8–10 items per topic-difficulty cell
+Coverage report lists cells below threshold
+ML-001
+Rating, EMA, error inference and planner are pure, versioned functions
+engine_version
+ stored on snapshots and plans
+ML-002
+Estimates always carry an interval and an evidence count
+UI never shows a single bare number
+ML-003
+Readiness mean absolute error under 8 points after 3 sessions (pilot hypothesis, not a guarantee)
+Computed in the pilot report
+ML-004
+Thin-evidence topics get a probe block rather than being ignored
+Plan includes probe for topics under the evidence threshold
+3. User roles and permissions
+Role
+Purpose
+Can view
+Can create / update
+Cannot
+Enforcement
+Visitor (no login)
+Browse public pages
+Landing page, public blueprint pages
+Nothing
+Any 
+/me
+ or admin data
+Public routes only
+Student
+Prepare for an assessment
+Own profile, attempts, plans, readiness, notebook
+Own requirements, error reports, plans, sessions, consent; export or delete own data
+Any other student's data; admin screens
+JWT role claim plus object-level filter on every query
+Content admin
+Maintain the bank and blueprints
+Questions, blueprints, item statistics, issue queue, import batches
+Questions, lessons, blueprints, imports
+Identifiable student performance (aggregates only)
+Role guard; student-level access needs logged, time-limited elevation
+Reviewer
+Approve content
+Draft items and review queue
+Review decisions, notes
+Publishing without a second reviewer for diagnostic and reassessment items; student data
+Role guard and two-reviewer rule
+Support (temporary elevation)
+Resolve a student issue
+A specific student's records for a limited time
+Nothing destructive
+Anything outside the elevation window
+Time-limited grant, every access written to 
+audit_log
+Authentication is required for all non-public routes. [C]
+4. Complete user workflows
+4.1 Workflow summary
+ID
+Workflow
+Frontend / API
+Backend and database
+Engine
+Failure paths
+Final UI state
+W-01
+Register and consent
+P-03; E-001, E-002
+Hash password, insert 
+users
+, 
+consent_records
+; send verification
+none
+Duplicate email (409); weak password (422); rate limit (429)
+Verified account, redirected to diagnostic intro
+W-02
+Take setup diagnostic
+P-06, P-07; E-010 to E-014
+Build test from bank, serve items, record events through Redis stream, persist to 
+question_attempts
+Marking
+Connection loss: local autosave and resume; second pause refused; abandoned over 48 h marks profile partial
+Submitted diagnostic
+W-03
+Review result and tag errors
+P-08, P-09; E-015, E-016
+Compute result, write 
+attempt_error_feedback
+ and 
+attempt_error_inference
+Error rules
+Feedback skipped: observed signals only, card offered again after first practice
+Result and tagged errors saved
+W-04
+Baseline profile
+P-10; E-020
+Initialise 
+student_topic_profiles
+, snapshot
+Rating and EMA updates
+Thin evidence: wide band and 
+early estimate
+Radar and topic table with evidence counts
+W-05
+Requirements and first plan
+P-11, P-12; E-021, E-030, E-031
+Validate and store requirements; find or create blueprint; generate plan and rationale
+Priority, knapsack, fallback
+Unknown assessment: generic blueprint; planner timeout: fallback plan
+Day 1 plan with Why this?
+W-06
+Daily practice loop
+P-13 to P-15; E-040 to E-044
+Serve blocks, record attempts, flush barrier, recalc job, new plan
+All engine functions
+Recalc failure: practice unaffected, retry job, banner with neutral wording
+Summary, updated dashboard, What changed card
+W-07
+Reassessment
+P-18; E-050, E-051
+Build parallel-form test from unseen items, compare with baseline snapshot
+Rating, EMA
+Pool exhausted: reduce length and tell the student
+Comparison and updated plan
+W-08
+Change plan inputs (time, date, target, pins, keep-my-plan)
+P-11, P-16; E-021, E-032 to E-034
+Update requirements, regenerate for future days only, write 
+plan_change_log
+Planner
+Invalid dates; session in progress is untouched
+New plan and What changed
+W-09
+Admin imports and reviews content
+P-20 to P-24; E-060 to E-066
+Parse, validate, dedupe, insert as 
+draft
+, review, publish
+none
+Rejected rows reported; missing source blocks publish
+Published items and batch record
+W-10
+Export or delete data
+P-19; E-070 to E-072
+Re-authenticate, build export, schedule deletion
+none
+Deletion pending: account locked, backups age out
+Confirmation notice
+4.2 Sequence: answer submission (highest-risk flow)
+sequenceDiagram
+  participant B as Browser
+  participant A as NestJS API
+  participant R as Redis Stream
+  participant W as Consumer worker
+  participant D as PostgreSQL
+  B->>A: PUT answer (attempt id, input)
+  A->>A: stamp server time, mark from cached key
+  A->>R: XADD attempt event, update session aggregates
+  A-->>B: correctness, expected time, feedback
+  W->>R: read batch (max 100 or 1 s)
+  W->>D: INSERT ... ON CONFLICT DO NOTHING
+  W->>R: ack
+  B->>A: POST finish session
+  A->>A: flush barrier (reconcile ids, drain stream)
+  A-->>B: 202 recalculation pending
+4.3 Edge cases (all workflows)
+Assessment missing from the catalogue; fewer than 24 hours left (skip deep diagnostic, show a 20–30 minute plan and an honest message); missed days (compress, no guilt wording); test date moved or new target added; thin data; abandoned diagnostic; duplicate submission of the same attempt id (return stored result); cancelled session (partial attempts kept, no recalculation until the student finishes or the session expires after a stated timeout [P] of 2 hours).
+PART II — SYSTEM ARCHITECTURE
+5. Overall technical architecture
+5.1 Component decisions
+Concern
+Choice
+Status
+Why it fits
+Alternatives considered
+Frontend
+Next.js (React, TypeScript, App Router)
+[C]
+Server rendering for public blueprint pages (SEO), component model, PWA support
+Vite SPA (no SSR)
+Styling and UI
+Tailwind CSS with accessible primitives
+[C]
+Fast and consistent; accessibility support
+CSS modules
+Data fetching
+TanStack Query
+[C]
+Caching and optimistic updates for the practice flow
+SWR
+Math rendering
+KaTeX
+[C]
+Fast LaTeX for aptitude formulas
+MathJax
+Charts
+Recharts
+[P]
+Radar and bar-with-band charts needed
+Chart.js
+Backend
+NestJS (TypeScript), modular monolith
+[C]
+Structure, validation, same language as frontend
+Express (rejected by team)
+API style
+REST with OpenAPI
+[C]
+Simple, documentable, testable
+GraphQL (unneeded)
+Database
+PostgreSQL
+[C]
+Relational queries across attempts, profiles and blueprints
+MongoDB (rejected)
+ORM
+Prisma
+[C]
+Typed schema and migrations
+TypeORM
+Redis
+Required
+[C]
+Attempt stream buffer, rate limiting, sessions, job queues
+In-process queue (loses data on restart)
+Jobs
+BullMQ on Redis
+[P]
+Post-session recalculation, emails
+Redis Streams only
+Auth
+JWT access token, rotating refresh token in httpOnly cookie, Google OAuth with PKCE, RBAC
+[C]
+Stateless, standard
+Session cookies only
+Object storage
+S3-compatible bucket
+[P]
+Only for optional uploaded assessment documents and exports
+Local disk (not durable)
+ML / batch
+Python scripts or FastAPI worker, offline only
+[C]
+Embeddings and item statistics
+None needed for MVP
+Observability
+Sentry, structured logs, health endpoints, product analytics (PostHog)
+[P]
+Errors and funnels
+Self-hosted stack
+CI/CD
+GitHub Actions, Docker
+[C]
+Standard
+GitLab CI
+Deliberately not used:
+ microservices, Kubernetes, message brokers other than Redis, GraphQL, WebSockets, SSE in the MVP, a vector database (pgvector only later).
+5.2 Architecture diagram
+flowchart LR
+  subgraph Client
+    WEB[Next.js web app and PWA]
+    ADM[Admin console]
+  end
+  WEB -->|HTTPS REST| API
+  ADM -->|HTTPS REST| API
+  subgraph Backend[NestJS modular monolith]
+    API[Controllers and guards]
+    ENG[Engine package: rating, EMA, error rules, priority, planner]
+    API --> ENG
+  end
+  API --> PG[(PostgreSQL)]
+  API --> RD[(Redis: stream, cache, queues)]
+  RD --> WRK[Workers: batch insert, recalculation, email]
+  WRK --> PG
+  WRK --> ENG
+  API --> OBJ[(Object storage)]
+  PY[Python batch jobs, offline] --> PG
+5.3 Request lifecycle
+Browser request → CDN or host edge → NestJS guard chain (rate limit, JWT, role, object ownership) → validation (zod or class-validator) → controller → service → engine (pure functions) → Prisma → response envelope. Answer submissions diverge: they mark from cache, append to the Redis stream and return before the database write (Section 11, E-041).
+6. Technology stack and version policy
+Version rule.
+ Do not hard-code versions from memory. At the start of PH-0 the agent must query each registry (npm, PyPI, Docker Hub) for the current stable or LTS release, check peer-dependency compatibility, pin exact versions in lockfiles, and record the chosen versions in 
+docs/ARCHITECTURE.md
+.
+Technology
+Layer
+Purpose
+Version policy
+Mandatory
+Node.js
+Runtime
+Frontend and backend
+Current LTS
+Yes
+TypeScript
+Language
+Shared types
+Latest stable compatible with NestJS and Next.js
+Yes
+Next.js, React
+Frontend
+UI
+Latest stable pair
+Yes
+Tailwind CSS
+Frontend
+Styling
+Latest stable
+Yes
+TanStack Query, react-hook-form, zod
+Frontend
+Data and forms
+Latest stable
+Yes
+KaTeX
+Frontend
+Math
+Latest stable
+Yes
+Recharts
+Frontend
+Charts
+Latest stable
+Yes
+NestJS
+Backend
+API
+Latest stable
+Yes
+Prisma
+Backend
+ORM and migrations
+Latest stable
+Yes
+PostgreSQL
+Database
+Primary store
+Supported major version offered by the chosen host
+Yes
+Redis
+Infra
+Stream, cache, queues
+Version supporting Streams, offered by the host
+Yes
+BullMQ
+Backend
+Jobs
+Latest stable
+Yes
+Argon2 library
+Backend
+Password hashing
+Maintained package
+Yes
+Vitest or Jest, supertest
+Test
+Unit and API tests
+Latest stable
+Yes
+Playwright
+Test
+End to end
+Latest stable
+Yes
+k6
+Test
+Load
+Latest stable
+Yes
+axe-core
+Test
+Accessibility
+Latest stable
+Yes
+OWASP ZAP
+Test
+Security scan
+Latest stable
+Yes
+Docker, docker compose
+Dev and deploy
+Local services
+Latest stable
+Yes
+Python
+Batch
+Offline jobs
+Supported version
+Optional
+pgvector
+Database
+Similarity search
+Host-supported
+Optional (P2)
+Sentry, PostHog
+Ops
+Errors, analytics
+SaaS
+Optional
+PART III — UI/UX AND FRONTEND
+7. Page and screen inventory
+All student routes require login except where marked public. Every screen has loading (skeleton), empty, error (message plus retry) and success states unless stated. Responsive target is 360 px and up; no horizontal page scroll.
+ID
+Route
+Role
+Purpose
+Main elements
+API
+P-01
+/
+Visitor
+Explain the product, drive sign-up
+Hero with one-line USP, three-step explainer, sample blueprint teaser, sign-up button
+E-055
+P-02
+/assessments/[slug]
+Visitor
+Public blueprint page (SEO and free demo)
+Sections, durations, question counts, negative marking, topic shares, provenance badge and last-verified date per field, unverified notice, 
+not affiliated
+ disclaimer
+E-056
+P-03
+/register
+Visitor
+Create account
+Email, password with strength hint, Google button, graduation year, branch, consent checkbox with notice link
+E-001, E-005
+P-04
+/login
+Visitor
+Sign in
+Email, password, Google, reset link; generic error text
+E-002
+P-05
+/verify-email
+, 
+/reset-password
+Visitor
+Verification and reset
+Single-use token pages
+E-006
+P-06
+/onboarding/diagnostic
+Student
+Intro to the diagnostic
+What it measures, time estimate, standard or express choice (express suggested when test is within 48 hours), resume button if paused
+E-010
+P-07
+/diagnostic/[id]
+Student
+Run the diagnostic
+Question stem with KaTeX, options or numeric field, per-question timer (display only), skip, next, progress, pause (once)
+E-011 to E-014
+P-08
+/diagnostic/[id]/result
+Student
+Result analysis
+Accuracy by topic and difficulty, time vs expected chart, skip pattern, consistency, list of areas needing more evidence
+E-015
+P-09
+/diagnostic/[id]/review
+Student
+Error-cause feedback
+Per question: stem, correct answer, worked solution, time vs expected, reason picker, optional note, skip-for-now
+E-016
+P-10
+/profile
+Student
+Baseline and current profile
+Radar plus sortable table, interval and evidence count per topic, reported vs observed share of error mix, baseline comparison
+E-020
+P-11
+/setup/requirements
+Student
+Preparation requirements
+Searchable assessment select, mode, test date, deadline, minutes per weekday, block length, wanted topics, optional known info, optional document upload, optional commitment
+E-021, E-022, E-055
+P-12
+/plan
+Student
+First and current plan
+Day cards, blocks with minutes, Why this? panel per block, What changed card, Start button
+E-030 to E-033
+P-13
+/dashboard
+Student
+Readiness Gap
+Current vs target bands per topic, readiness band with confidence badge, priority ranking, low-priority list, today's plan, What changed
+E-031, E-036
+P-14
+/session/[id]
+Student
+Practice runner
+Block header (what it targets), timer, question, MCQ or numeric input, instant feedback, one-tap cause chips after a miss
+E-040 to E-042, E-016
+P-15
+/session/[id]/summary
+Student
+Session summary
+Accuracy, time vs pace, topic movement, recalculation status, next plan link
+E-043
+P-16
+/plan/history
+Student
+Plan versions
+Version list with date and trigger, side-by-side compare, restore
+E-033, E-034 (P1)
+P-17
+/notebook
+Student
+Mistake notebook
+Table of misses with cause, retry date, filters, retry button
+E-044
+P-18
+/reassessment
+Student
+Start and review reassessment
+Choose short check, topic test or mock; comparison with baseline; “too early to tell” labels
+E-050, E-051
+P-19
+/settings
+Student
+Account and privacy
+Profile, consents, plan settings (keep my plan, pins, reminders), export, delete
+E-007, E-035, E-070 to E-072
+P-20
+/admin/questions
+Admin
+Question list
+Search, filters (topic, status, format, difficulty), pagination, bulk actions
+E-060
+P-21
+/admin/questions/[id]
+Admin
+Question editor
+Stem editor with KaTeX preview, format switch, options with trap tags or numeric answer and tolerance, tags, expected time, source, status
+E-060, E-061
+P-22
+/admin/import
+Admin
+Bulk import
+Source select, file or URL, dry-run report, confirm import, batch list with delete
+E-062, E-063
+P-23
+/admin/blueprints
+Admin
+Blueprint editor
+Sections, topic shares, provenance and source per field, version history
+E-064
+P-24
+/admin/review
+, 
+/admin/issues
+Admin, reviewer
+Review queue and issue reports
+Draft items, reviewer notes, approve or reject; student-reported issues (P1)
+E-061
+Navigation: student shell has Dashboard, Plan, Practice, Notebook, Profile, Settings. Admin shell has Questions, Import, Blueprints, Review. Unauthorised access redirects to login (401) or shows a forbidden page (403).
+8. Detailed UI component specification
+8.1 Design system [P]
+No visual identity has been confirmed, so this is a restrained proposal. Neutral background, one accent colour, one status palette (success, warning, error, info) that is never the only signal (always paired with text or icon). System or Inter font, body 16 px minimum, spacing on a 4 px grid, touch targets at least 44 px, light and dark tokens defined as CSS variables, focus ring visible on every interactive element, motion kept minimal and respecting reduced-motion.
+8.2 Key components
+Component
+Used on
+Behaviour
+Validation and states
+Accessibility
+QuestionView
+P-07, P-14
+Renders stem with KaTeX; passages and tables supported; images have alt text
+Sanitised HTML only
+Heading structure; math has readable alternative text
+McqOptions
+P-07, P-14
+Radio group; selection stored locally and sent on Next
+One selection; none means skip
+Arrow-key navigation, labels
+NumericInput
+P-07, P-14
+Text field with numeric keypad on mobile; accepts minus sign and a decimal point; strips commas
+Unparseable text shows inline message without consuming the attempt; decimals limited to the question's rule
+aria-describedby
+ for rules
+Timer
+P-07, P-14
+Counts up from 
+shownAt
+ returned by server; display only
+Never sent as truth
+Not announced every second; announces at thresholds
+SkipButton
+, 
+NextButton
+P-07, P-14
+Skip sends 
+skipped: true
+; Next disabled until a valid input or explicit skip
+Debounced to prevent double submit; attempt id reused on retry
+Keyboard shortcuts documented
+ErrorCausePicker
+P-09, P-14
+Chips: concept unknown, formula forgotten, calculation error, misread, ran out of time, guessed, careless, underprepared, knew it but could not apply it, rounding or units (numeric only), other with optional text
+Optional; editable later; shows observed time as context
+Chips are a labelled radio group
+ConflictNote
+P-09
+Optional note when a report disagrees with observed time, for example “This was a quick answer; do you want to look at it again?”
+Dismissible; changes nothing unless the student acts
+Polite live region
+ProfileRadar
+, 
+TopicTable
+P-10
+Radar by section plus sortable table with interval and count
+Interval shown as range; 
+early estimate
+ badge below threshold
+Table is the accessible equivalent of the chart
+ReadinessBars
+P-13
+Bar with target band, current marker, confidence badge, evidence count
+Never a single bare number
+Text summary beside each bar
+ReadinessBand
+P-13
+Range such as 58–66% with wording that it is a practice-based estimate
+Wide band when evidence is thin
+Plain-language label
+PlanDay
+, 
+PlanBlock
+P-12, P-13
+Block shows topic, minutes, block type, pin icon, Why this? toggle
+Pinned blocks never moved by updates
+Collapsible regions with 
+aria-expanded
+WhyThisPanel
+P-12, P-13
+Renders stored rationale JSON as a fixed-format list: accuracy, error mix, blueprint relevance and source type, pace, days left, expected gain, and what would change it
+Read-only
+Heading and list semantics
+WhatChangedCard
+P-12, P-13
+Shown once after each update: top three changes and a details link
+Dismissible; history link
+Polite live region
+RequirementsForm
+P-11
+Fields per Section 5.3.4 of the v1 document
+Dates in the future; minimum daily time; deadline not after test date; inline errors on blur and submit
+Error summary at top
+QuestionEditor
+P-21
+Format switch changes visible fields; live preview of what counts as correct for numeric items
+Exactly one correct option for MCQ; numeric answer required for numerical; source required to publish
+Labelled fields
+ImportReport
+P-22
+Table of accepted, rejected (with reason), duplicate rows
+Confirm disabled until dry run completes
+Table semantics
+Toast
+, 
+Alert
+, 
+ConfirmDialog
+Global
+Neutral wording, no guilt or warnings; confirm for delete, restore plan and abandon session
+Focus trapped in dialog
+Escape closes; returns focus
+Skeleton
+, 
+EmptyState
+Global
+Skeleton while loading; empty states say what to do next, for example “Take the diagnostic to see your profile”
+none
+Not announced as errors
+8.3 Hierarchy and reuse
+AppShell
+ → 
+StudentLayout
+ or 
+AdminLayout
+ → page → feature components (
+diagnostic/
+, 
+practice/
+, 
+plan/
+, 
+profile/
+, 
+admin/
+) → shared primitives (
+Button
+, 
+Input
+, 
+Select
+, 
+Card
+, 
+Table
+, 
+Dialog
+, 
+Badge
+, 
+Chart
+). Feature components never call 
+fetch
+ directly; they use hooks from the API client.
+9. Frontend implementation plan
+Topic
+Specification
+Structure
+Next.js App Router with route groups 
+(public)
+, 
+(student)
+, 
+(admin)
+; server rendering for P-01 and P-02, client rendering for runner screens
+State
+Server state in TanStack Query; local UI state in React state; the practice runner keeps an in-memory session store persisted to IndexedDB for resume
+API client
+Generated from the OpenAPI spec into 
+packages/shared
+; one wrapper adds the access token, request id, error mapping and refresh-on-401 (once)
+Auth
+Access token held in memory; refresh token is an httpOnly cookie; on reload the app calls E-003 to restore; role-based route guards in middleware
+Forms
+react-hook-form with zod schemas shared with the backend; validation is for usability only, the server revalidates
+Errors
+Error boundary per route group; typed error codes map to neutral messages; network failure shows retry; 401 after refresh failure redirects to login
+Long-running work
+Finishing a session returns 202; the summary page polls E-043 every 2 seconds with backoff up to 30 seconds until 
+recalcStatus
+ is 
+done
+ or 
+failed
+; practice is never blocked by a failed recalculation
+Resume and offline
+The runner stores unsent attempts locally; on reconnect it re-sends with the same attempt ids; at finish the server reconciles (Section 15)
+Caching
+Dashboard and plan cached for 30 seconds [P]; invalidated after session finish, requirements change and error-report edits
+Responsive
+Mobile-first; single column under 640 px; charts degrade to tables
+Accessibility
+WCAG 2.1 AA targets; keyboard-only completion of the diagnostic; axe in CI
+Performance
+Code splitting by route group; lazy-load charts and KaTeX; images optimised; no blocking third-party scripts
+Testing
+Component tests (Vitest and Testing Library), end-to-end flows (Playwright), accessibility checks (axe)
+Configuration
+NEXT_PUBLIC_API_URL
+ and a small set of public flags only; no secrets in the frontend bundle
+PART IV — BACKEND AND API CONTRACTS
+10. Backend architecture
+10.1 Responsibility split
+Concern
+Frontend
+Backend (NestJS)
+Database
+Engine package
+Validation
+Usability only
+Authoritative (zod / class-validator)
+Constraints as last defence
+Assumes validated input
+Marking and timing
+Display timer
+Authoritative
+Stores results
+Marking functions
+Estimation and planning
+Renders results
+Orchestrates and persists
+Stores states and plans
+Computes (pure)
+Authorization
+Hides UI
+Authoritative (role plus object ownership)
+Row ownership columns
+none
+10.2 Modules
+Module
+Responsibility
+Owns tables
+Depends on
+auth
+Registration, login, refresh rotation, OAuth, verification, reset
+users
+, 
+refresh_tokens
+, 
+consent_records
+users
+, mail
+users
+Profile, consents, export, deletion
+student_profiles
+auth
+catalog
+Topics, concepts, assessments, blueprints, provenance
+topics
+, 
+concepts
+, 
+assessments
+, 
+assessment_versions
+, 
+blueprint_*
+none
+questions
+Question CRUD, review workflow, import batches, lessons
+questions
+, 
+question_options
+, 
+lessons
+, 
+import_batches
+catalog
+diagnostic
+Compose and run setup diagnostic, results
+diagnostic_tests
+, 
+diagnostic_results
+questions
+, 
+attempts
+attempts
+Marking, Redis stream, consumers, flush barrier
+question_attempts
+questions
+, Redis
+feedback
+Error reports and inference
+attempt_error_feedback
+, 
+attempt_error_inference
+, 
+error_types
+attempts
+, engine
+profile
+Rating and EMA updates, snapshots
+student_topic_profiles
+, 
+profile_snapshots
+attempts
+, engine
+requirements
+Requirements form, validation, documents
+preparation_requirements
+, 
+uploaded_documents
+catalog
+planner
+Priority, planning, rationale, change log, history
+practice_plans
+, 
+practice_plan_items
+, 
+plan_change_log
+profile
+, 
+requirements
+, engine
+practice
+Sessions, notebook
+practice_sessions
+, 
+mistake_entries
+planner
+, 
+attempts
+reassessment
+Parallel forms, baseline comparison
+reassessment_results
+, 
+readiness_estimates
+profile
+, 
+questions
+analytics
+Dashboard aggregates, weekly summaries
+read models
+all
+admin
+Admin endpoints, audit log, item statistics
+audit_log
+questions
+, 
+catalog
+billing
+ (P1)
+Plans, orders, webhooks
+subscriptions
+, 
+payments
+auth
+notifications
+ (P1)
+Email and push reminders
+none
+users
+Cross-cutting: request id middleware, structured logging with redaction, global exception filter, rate-limit guard, role guard, ownership guard, OpenAPI generation.
+11. Complete API specification
+11.1 Conventions
+Base path 
+/api/v1
+. JSON only. 
+Authorization: Bearer <access token>
+ except public routes. Timestamps ISO 8601 UTC. Identifiers UUID.
+Success envelope:
+ 
+{ "data": ..., "meta": { "requestId": "..." } }
+.
+Error envelope:
+ 
+{ "error": { "code": "VALIDATION_FAILED", "message": "Human readable", "details": [ ... ], "requestId": "..." } }
+. Codes: 
+UNAUTHENTICATED
+ 401, 
+FORBIDDEN
+ 403, 
+NOT_FOUND
+ 404, 
+CONFLICT
+ 409, 
+VALIDATION_FAILED
+ 422, 
+RATE_LIMITED
+ 429, 
+INTERNAL
+ 500.
+Endpoints under 
+/me
+ take the user from the token only. Any resource reachable by id is also filtered by owner.
+Idempotency: attempt submissions use the client-generated attempt id; plan generation accepts an 
+Idempotency-Key
+ header; payment webhooks de-duplicate by gateway event id.
+Rate limits [P]: auth 10 per minute per IP; submissions 120 per minute per user; export 3 per day; admin import 5 per minute.
+11.2 Endpoint table
+ID
+Method and path
+Access
+Purpose and key request fields
+Success
+Main errors
+DB and engine
+E-001
+POST 
+/auth/register
+Public
+Create account. 
+email
+, 
+password
+ (min 10, breached-password check), 
+gradYear
+, 
+branch
+, 
+consentVersion
+201
+409 duplicate, 422
+insert 
+users
+, 
+consent_records
+E-002
+POST 
+/auth/login
+Public
+email
+, 
+password
+; returns access token, sets refresh cookie
+200
+401 generic, 429
+read 
+users
+, insert 
+refresh_tokens
+E-003
+POST 
+/auth/refresh
+Cookie
+Rotate refresh token
+200
+401 on reuse (revokes session)
+update 
+refresh_tokens
+E-004
+POST 
+/auth/logout
+Auth
+Revoke refresh token
+204
+401
+update 
+refresh_tokens
+E-005
+GET 
+/auth/google
+, 
+/auth/google/callback
+Public
+OAuth 2.0 with state and PKCE
+302
+400 state mismatch
+upsert 
+users
+E-006
+POST 
+/auth/verify-email
+, 
+/auth/password-reset/request
+, 
+/auth/password-reset/confirm
+Public
+Single-use expiring tokens
+204
+400, 410 expired
+users
+, token store
+E-007
+GET, PUT 
+/me
+Student
+Profile fields
+200
+422
+student_profiles
+E-010
+POST 
+/diagnostics
+Student
+mode
+: 
+standard
+ or 
+express
+; builds test
+201 
+{id, questionCount}
+409 already completed
+insert 
+diagnostic_tests
+E-011
+GET 
+/diagnostics/:id/next
+Student, owner
+Next question without key; returns 
+shownAt
+200
+404, 409 finished
+read 
+questions
+; stamps 
+shownAt
+E-012
+PUT 
+/diagnostics/:id/answers/:questionId
+Student, owner
+attemptId
+, 
+selectedOptionId
+ or 
+numericInput
+, 
+skipped
+, 
+revisitCount
+, 
+answerChanges
+200 feedback-free ack for diagnostic (feedback shown after submit)
+422, 409
+stream append
+E-013
+POST 
+/diagnostics/:id/pause
+Student, owner
+Pause once
+200
+409 already paused
+update 
+diagnostic_tests
+E-014
+POST 
+/diagnostics/:id/submit
+Student, owner
+Finish; runs flush barrier
+202 
+{resultStatus}
+409
+barrier, compute result
+E-015
+GET 
+/diagnostics/:id/result
+Student, owner
+Topic and difficulty accuracy, speed vs expected, skips, consistency, thin-evidence list
+200
+404, 409 not ready
+read 
+diagnostic_results
+E-016
+PUT 
+/attempts/:attemptId/error-feedback
+Student, owner
+reason
+, optional 
+text
+; idempotent; editable
+200
+404, 422
+upsert 
+attempt_error_feedback
+, recompute inference
+E-020
+GET 
+/me/profile
+, 
+/me/profile/history
+Student
+Current profile and snapshots
+200
+none
+student_topic_profiles
+, 
+profile_snapshots
+E-021
+GET, PUT 
+/me/requirements
+Student
+Requirements form (Section 11.4)
+200
+422
+preparation_requirements
+; triggers E-030
+E-022
+POST 
+/me/requirements/documents
+Student
+Optional upload, allow-listed types, size limit
+201
+415, 413
+object storage, 
+uploaded_documents
+E-030
+POST 
+/me/plans
+Student
+Generate plan; 
+minutes
+ optional override; 
+Idempotency-Key
+201 plan
+409 no requirements
+planner and engine; insert plan, items, change log
+E-031
+GET 
+/me/plans/current
+Student
+Current plan with 
+plannerMethod
+ and 
+recalcStatus
+200
+404
+read plan
+E-032
+GET 
+/me/plans/:planId/items/:itemId/rationale
+Student, owner
+Stored rationale JSON
+200
+404
+read item
+E-033
+GET 
+/me/plans/:planId/changes
+Student, owner
+What changed and history
+200
+404
+plan_change_log
+E-034
+POST 
+/me/plans/:planId/restore
+Student, owner
+Restore earlier version for future days (P1)
+201
+409
+new plan, change log
+E-035
+PUT 
+/me/plan-settings
+Student
+keepMyPlan
+, pins, reminder limits
+200
+422
+settings
+E-036
+GET 
+/me/readiness
+Student
+Per-topic bands, overall band, confidence
+200
+404
+readiness_estimates
+E-040
+POST 
+/sessions
+Student
+Start from a plan block or custom practice: 
+planItemId
+ or 
+{topic, minutes}
+201 session
+404, 409
+insert 
+practice_sessions
+E-041
+PUT 
+/sessions/:id/attempts/:questionId
+Student, owner
+Submit answer (see 11.3)
+200
+422, 409, 429
+cache lookup, stream append
+E-042
+POST 
+/sessions/:id/finish
+Student, owner
+Flush barrier then enqueue recalculation
+202
+409
+queue job
+E-043
+GET 
+/sessions/:id/summary
+Student, owner
+Summary and 
+recalcStatus
+ (
+pending
+, 
+done
+, 
+failed
+)
+200
+404
+read
+E-044
+GET 
+/me/notebook
+Student
+Misses with cause and retry date; filters
+200
+none
+mistake_entries
+E-050
+POST 
+/me/reassessments
+Student
+Kind: 
+check
+, 
+topic
+, 
+mock
+; selects unseen items
+201 session
+409 pool exhausted
+questions
+, 
+practice_sessions
+E-051
+GET 
+/me/reassessments/:id/comparison
+Student, owner
+Baseline vs now, retention, noise labels
+200
+404
+reassessment_results
+E-055
+GET 
+/assessments
+Public
+List assessments
+200
+none
+assessments
+E-056
+GET 
+/assessments/:slug/blueprint
+Public
+Blueprint with provenance per field
+200
+404
+blueprint_*
+E-060
+GET, POST, PUT 
+/admin/questions
+Admin
+CRUD; format-specific validation
+200, 201
+422
+questions
+, 
+question_options
+E-061
+POST 
+/admin/questions/:id/review
+Reviewer
+Approve or reject with notes; two reviewers for diagnostic items
+200
+409 same reviewer twice
+update status
+E-062
+POST 
+/admin/import
+Admin
+source
+, file, 
+dryRun
+200 dry run, 201 import
+422
+import_batches
+, 
+questions
+E-063
+GET 
+/admin/import-batches
+, DELETE 
+/admin/import-batches/:id
+Admin
+List and reverse a batch
+200, 204
+404
+cascade by batch
+E-064
+GET, POST, PUT 
+/admin/blueprints
+Admin
+Create and version blueprints with provenance
+200, 201
+422
+blueprint_*
+, version row
+E-065
+GET, POST, PUT 
+/admin/lessons
+Admin
+Concept-repair lessons
+200, 201
+422
+lessons
+E-066
+GET 
+/admin/item-stats
+Admin
+Aggregates only: difficulty drift, time drift
+200
+none
+aggregates
+E-070
+GET 
+/me/data-export
+Student
+Re-auth required; JSON or CSV
+200
+401, 429
+read all own data
+E-071
+DELETE 
+/me
+Student
+Re-auth; schedules deletion within 30 days
+202
+401
+marks deletion, audit
+E-072
+PUT 
+/me/consents
+Student
+Withdraw optional uses
+200
+422
+consent_records
+E-080
+GET 
+/health
+, 
+/ready
+Internal
+Liveness and readiness (database, Redis)
+200, 503
+503
+checks
+E-090
+PUT 
+/me/commitment
+ (P1)
+Student
+Set, edit or end streak
+200
+422
+commitments
+E-091
+POST 
+/me/external-scores
+ (P1)
+Student
+Log outside scores
+201
+422
+external_scores
+E-092
+POST 
+/pattern-reports
+ (P1)
+Student
+Structure only; free-text question content rejected
+201
+422
+pattern_reports
+E-093
+POST 
+/billing/orders
+, POST 
+/billing/webhook
+ (P1)
+Student, gateway
+Create order; webhook grants access, signature verified, idempotent
+201, 200
+400 bad signature
+payments
+, 
+subscriptions
+There are 
+no internal ML endpoints
+ in the MVP; the engine is a library. Webhooks exist only for billing (P1).
+11.3 Example: submit an answer (E-041)
+Request:
+PUT /api/v1/sessions/7f3c.../attempts/b21a...
+{
+  "attemptId": "0d6e5a1c-2c61-4c1e-9d3a-5b7c0c2a9f10",
+  "selectedOptionId": "c9f1...",
+  "numericInput": null,
+  "skipped": false,
+  "answerChanges": 1,
+  "revisitCount": 0
+}
+Response 200:
+{
+  "data": {
+    "attemptId": "0d6e5a1c-2c61-4c1e-9d3a-5b7c0c2a9f10",
+    "isCorrect": false,
+    "timeMs": 161000,
+    "expectedTimeMs": 90000,
+    "paceRatio": 1.79,
+    "correctAnswerShown": true,
+    "promptErrorCause": true,
+    "roundingSuspected": false
+  },
+  "meta": { "requestId": "req_..." }
+}
+Rules: the same 
+attemptId
+ returns the stored result; a numeric answer that cannot be parsed returns 422 
+INVALID_NUMERIC_INPUT
+ and does not consume the attempt; negative marking is applied only if the blueprint for the session says so.
+11.4 Example: requirements (E-021) and plan generation (E-030)
+PUT /api/v1/me/requirements
+{
+  "assessmentId": "uuid or null",
+  "mode": "assessment_specific",
+  "testDate": "2026-10-28",
+  "deadlineDate": "2026-10-27",
+  "minutesPerWeekday": { "mon": 45, "tue": 45, "wed": 45, "thu": 45, "fri": 45, "sat": 60, "sun": 30 },
+  "blockLengthMinutes": 15,
+  "wantedTopics": ["probability"],
+  "preparationLevel": "revising",
+  "commitment": null
+}
+Validation: 
+testDate
+ in the future; 
+deadlineDate
+ not after 
+testDate
+; each day at least 10 minutes or zero [P]; 
+blockLengthMinutes
+ one of 15, 30, 45, 60, 90.
+Plan response (abridged):
+{
+  "data": {
+    "planId": "uuid",
+    "plannerMethod": "knapsack",
+    "elapsedMs": 12,
+    "engineVersion": "1.0.0",
+    "items": [
+      { "id": "uuid", "dayIndex": 0, "orderNo": 1, "blockType": "concept_repair",
+        "topic": "permutation-combination", "minutes": 8, "pinned": false,
+        "rationale": { "accuracy": 0.42, "conceptualShare": 0.61, "relevance": 0.85,
+                       "blueprintSource": "candidate_reported", "daysLeft": 3,
+                       "priority": 0.24, "wouldChangeIf": "accuracy at pace reaches target band" } }
+    ]
+  }
+}
+11.5 Asynchronous processing
+Submitting finish (E-042) or diagnostic submit (E-014) returns 202. A BullMQ job runs the flush barrier then recalculation. Status is read from E-043 or E-031 (
+recalcStatus
+). Failed jobs retry up to 3 times with exponential backoff (safe because recalculation is a pure function of persisted attempts and is idempotent by session id). After final failure the status is 
+failed
+, an alert is raised, and the student sees a neutral banner with a retry action.
+PART V — DATABASE AND DATA ENGINEERING
+12. Database design
+Engine:
+ PostgreSQL [C]. Relational integrity is needed across attempts, profiles, blueprints and plans. Application data (users, content, attempts, plans) lives in PostgreSQL; transient data (stream, cache, rate limits, job queues) in Redis; uploaded files and exports in object storage; raw datasets outside version control; logs in the logging service; the engine is a code library, so there are no model artifacts in the MVP.
+12.1 Entity relationships
+erDiagram
+  users ||--|| student_profiles : has
+  users ||--o{ consent_records : gives
+  users ||--o{ diagnostic_tests : takes
+  users ||--o{ question_attempts : makes
+  questions ||--o{ question_options : has
+  questions ||--o{ question_attempts : answered_in
+  import_batches ||--o{ questions : produced
+  question_attempts ||--o| attempt_error_feedback : explained_by
+  question_attempts ||--o| attempt_error_inference : classified_as
+  users ||--o{ student_topic_profiles : has
+  users ||--o{ profile_snapshots : has
+  users ||--o{ preparation_requirements : sets
+  assessments ||--o{ assessment_versions : versioned_as
+  assessment_versions ||--o{ blueprint_sections : contains
+  blueprint_sections ||--o{ blueprint_topic_weights : weights
+  topics ||--o{ blueprint_topic_weights : referenced_by
+  preparation_requirements ||--o{ practice_plans : drives
+  practice_plans ||--o{ practice_plan_items : contains
+  practice_plans ||--o{ plan_change_log : logs
+  practice_sessions ||--o{ question_attempts : groups
+12.2 MVP schema (SQL DDL)
+Conventions: 
+id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+; every table has 
+created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+ and mutable tables have 
+updated_at
+; foreign keys are 
+ON DELETE RESTRICT
+ unless stated; student-owned tables carry 
+user_id
+ and are always queried with it.
+-- Identity
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email CITEXT NOT NULL UNIQUE,
+  password_hash TEXT,                      -- null for Google-only accounts
+  google_sub TEXT UNIQUE,
+  role TEXT NOT NULL DEFAULT 'student' CHECK (role IN ('student','admin','reviewer')),
+  email_verified_at TIMESTAMPTZ,
+  deletion_requested_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE refresh_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  family_id UUID NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE consent_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  notice_version TEXT NOT NULL,
+  purpose TEXT NOT NULL CHECK (purpose IN ('core','analytics','model_improvement','reminders')),
+  granted BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE student_profiles (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  grad_year SMALLINT, branch TEXT, college TEXT,
+  language TEXT NOT NULL DEFAULT 'en',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Taxonomy and blueprints
+CREATE TABLE topics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_id UUID REFERENCES topics(id),
+  slug TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  level TEXT NOT NULL CHECK (level IN ('section','topic','subtopic','concept'))
+);
+CREATE TABLE concept_prerequisites (
+  concept_id UUID REFERENCES topics(id), prerequisite_id UUID REFERENCES topics(id),
+  PRIMARY KEY (concept_id, prerequisite_id)
+);
+CREATE TABLE assessments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug TEXT NOT NULL UNIQUE, company TEXT NOT NULL, name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE assessment_versions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id UUID NOT NULL REFERENCES assessments(id),
+  version INT NOT NULL, is_current BOOLEAN NOT NULL DEFAULT TRUE,
+  valid_from DATE NOT NULL, last_verified_at DATE,
+  UNIQUE (assessment_id, version)
+);
+CREATE TABLE assessment_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  version_id UUID NOT NULL REFERENCES assessment_versions(id),
+  source_type TEXT NOT NULL CHECK (source_type IN
+    ('official','public','candidate_reported','pattern_inferred','assumption')),
+  reference TEXT, confidence TEXT NOT NULL CHECK (confidence IN ('low','medium','high')),
+  last_verified_at DATE
+);
+CREATE TABLE blueprint_sections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  version_id UUID NOT NULL REFERENCES assessment_versions(id),
+  name TEXT NOT NULL, order_no SMALLINT NOT NULL,
+  duration_min SMALLINT, question_count_min SMALLINT, question_count_max SMALLINT,
+  negative_marking NUMERIC(4,2),            -- null means none or unknown, see source
+  format_mix JSONB,                         -- for example {"mcq":0.6,"numerical":0.4}
+  source_id UUID REFERENCES assessment_sources(id)
+);
+CREATE TABLE blueprint_topic_weights (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  section_id UUID NOT NULL REFERENCES blueprint_sections(id),
+  topic_id UUID NOT NULL REFERENCES topics(id),
+  share NUMERIC(4,3) NOT NULL CHECK (share BETWEEN 0 AND 1),
+  difficulty_band SMALLINT CHECK (difficulty_band BETWEEN 1 AND 3),
+  pace_seconds INT,
+  source_id UUID REFERENCES assessment_sources(id),
+  UNIQUE (section_id, topic_id)
+);
+-- Content
+CREATE TABLE import_batches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_name TEXT NOT NULL, source_ref TEXT NOT NULL,   -- URL plus commit or version
+  parser_version TEXT NOT NULL,
+  accepted INT NOT NULL DEFAULT 0, rejected INT NOT NULL DEFAULT 0, duplicates INT NOT NULL DEFAULT 0,
+  created_by UUID REFERENCES users(id), reversed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TYPE question_format AS ENUM ('mcq','numerical');
+CREATE TABLE questions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  topic_id UUID NOT NULL REFERENCES topics(id),
+  format question_format NOT NULL DEFAULT 'mcq',
+  stem TEXT NOT NULL, solution TEXT,
+  difficulty_prior SMALLINT NOT NULL CHECK (difficulty_prior BETWEEN 1 AND 3),
+  elo_rating REAL NOT NULL DEFAULT 1000,
+  expected_time_ms INT NOT NULL CHECK (expected_time_ms > 0),
+  language TEXT NOT NULL DEFAULT 'en',
+  numeric_answer NUMERIC, answer_format TEXT CHECK (answer_format IN ('integer','decimal')),
+  decimal_places SMALLINT, tolerance NUMERIC,
+  pool TEXT NOT NULL DEFAULT 'practice' CHECK (pool IN ('diagnostic','practice','reassessment')),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','reviewed','published','retired')),
+  source_name TEXT, author TEXT,
+  llm_assisted BOOLEAN NOT NULL DEFAULT FALSE,
+  import_batch_id UUID REFERENCES import_batches(id),
+  stem_hash TEXT NOT NULL,                  -- normalised text hash for dedupe
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT numerical_needs_answer CHECK (format = 'mcq' OR numeric_answer IS NOT NULL),
+  CONSTRAINT published_needs_source CHECK (status <> 'published' OR source_name IS NOT NULL)
+);
+CREATE INDEX idx_questions_cell ON questions (topic_id, difficulty_prior, pool, status);
+CREATE UNIQUE INDEX uq_questions_hash ON questions (stem_hash) WHERE status <> 'retired';
+CREATE TABLE question_options (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  text TEXT NOT NULL, is_correct BOOLEAN NOT NULL, trap_tag TEXT, order_no SMALLINT NOT NULL
+);
+CREATE UNIQUE INDEX uq_one_correct ON question_options (question_id) WHERE is_correct;
+CREATE TABLE question_reviews (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  question_id UUID NOT NULL REFERENCES questions(id), reviewer_id UUID NOT NULL REFERENCES users(id),
+  decision TEXT NOT NULL CHECK (decision IN ('approve','reject')), notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (question_id, reviewer_id)
+);
+CREATE TABLE lessons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  topic_id UUID NOT NULL REFERENCES topics(id), title TEXT NOT NULL, content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft', reviewed_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE error_types (
+  id SMALLINT PRIMARY KEY, code TEXT NOT NULL UNIQUE, label TEXT NOT NULL, category TEXT NOT NULL
+);
+-- Diagnostic, sessions, attempts
+CREATE TABLE diagnostic_tests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL CHECK (mode IN ('standard','express')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','submitted','partial')),
+  question_ids UUID[] NOT NULL, pause_count SMALLINT NOT NULL DEFAULT 0 CHECK (pause_count <= 1),
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(), submitted_at TIMESTAMPTZ
+);
+CREATE TABLE diagnostic_results (
+  diagnostic_id UUID PRIMARY KEY REFERENCES diagnostic_tests(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  summary JSONB NOT NULL, engine_version TEXT NOT NULL, computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE practice_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('practice','check','topic_test','mock')),
+  plan_item_id UUID, planned_minutes SMALLINT, actual_minutes SMALLINT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','finished','expired')),
+  recalc_status TEXT NOT NULL DEFAULT 'none' CHECK (recalc_status IN ('none','pending','done','failed')),
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(), finished_at TIMESTAMPTZ
+);
+CREATE TABLE question_attempts (
+  id UUID PRIMARY KEY,                       -- client-generated idempotency key
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES questions(id),
+  context_type TEXT NOT NULL CHECK (context_type IN ('diagnostic','practice','reassessment')),
+  context_id UUID NOT NULL,
+  shown_at TIMESTAMPTZ NOT NULL, answered_at TIMESTAMPTZ, time_ms INT,
+  selected_option_id UUID REFERENCES question_options(id),
+  numeric_input NUMERIC, rounding_suspected BOOLEAN NOT NULL DEFAULT FALSE,
+  is_correct BOOLEAN, skipped BOOLEAN NOT NULL DEFAULT FALSE,
+  sequence_no INT NOT NULL, revisit_count SMALLINT NOT NULL DEFAULT 0, answer_changes SMALLINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_attempts_user_time ON question_attempts (user_id, answered_at);
+CREATE INDEX idx_attempts_context ON question_attempts (context_type, context_id);
+CREATE TABLE attempt_error_feedback (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  attempt_id UUID NOT NULL UNIQUE REFERENCES question_attempts(id) ON DELETE CASCADE,
+  error_type_id SMALLINT NOT NULL REFERENCES error_types(id), free_text TEXT,
+  reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE attempt_error_inference (
+  attempt_id UUID PRIMARY KEY REFERENCES question_attempts(id) ON DELETE CASCADE,
+  error_type_id SMALLINT REFERENCES error_types(id),
+  method TEXT NOT NULL CHECK (method IN ('reported','rule')),
+  confidence REAL NOT NULL, conflict BOOLEAN NOT NULL DEFAULT FALSE
+);
+-- Profile, requirements, plans
+CREATE TABLE student_topic_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  topic_id UUID NOT NULL REFERENCES topics(id),
+  rating REAL NOT NULL DEFAULT 1000, rd REAL NOT NULL DEFAULT 350,
+  accuracy_ema REAL, time_ema_ms REAL, attempt_count INT NOT NULL DEFAULT 0,
+  error_mix JSONB NOT NULL DEFAULT '{}', updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, topic_id)
+);
+CREATE TABLE profile_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  trigger TEXT NOT NULL CHECK (trigger IN ('baseline','session','reassessment','edit')),
+  is_baseline BOOLEAN NOT NULL DEFAULT FALSE, data JSONB NOT NULL, engine_version TEXT NOT NULL,
+  taken_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE preparation_requirements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  assessment_id UUID REFERENCES assessments(id),
+  mode TEXT NOT NULL CHECK (mode IN ('general','assessment_specific')),
+  test_date DATE NOT NULL, deadline_date DATE NOT NULL CHECK (deadline_date <= test_date),
+  minutes_per_weekday JSONB NOT NULL, block_length_min SMALLINT NOT NULL,
+  wanted_topics UUID[] NOT NULL DEFAULT '{}', preparation_level TEXT, known_info JSONB,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE practice_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requirement_id UUID NOT NULL REFERENCES preparation_requirements(id),
+  snapshot_id UUID REFERENCES profile_snapshots(id),
+  trigger TEXT NOT NULL CHECK (trigger IN ('setup','session','reassessment','requirements_change','restore')),
+  planner_method TEXT NOT NULL CHECK (planner_method IN ('knapsack','fallback')),
+  elapsed_ms INT NOT NULL, engine_version TEXT NOT NULL, is_current BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE practice_plan_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES practice_plans(id) ON DELETE CASCADE,
+  day_index SMALLINT NOT NULL, order_no SMALLINT NOT NULL,
+  block_type TEXT NOT NULL, topic_id UUID NOT NULL REFERENCES topics(id),
+  minutes SMALLINT NOT NULL CHECK (minutes > 0), pinned BOOLEAN NOT NULL DEFAULT FALSE,
+  rationale JSONB NOT NULL
+);
+CREATE TABLE plan_change_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES practice_plans(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  trigger TEXT NOT NULL, summary JSONB NOT NULL, restored_from UUID REFERENCES practice_plans(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE readiness_estimates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requirement_id UUID REFERENCES preparation_requirements(id),
+  band_low NUMERIC(5,2) NOT NULL, band_high NUMERIC(5,2) NOT NULL,
+  confidence TEXT NOT NULL CHECK (confidence IN ('low','medium','high')),
+  factors JSONB NOT NULL, engine_version TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE reassessment_results (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  session_id UUID NOT NULL REFERENCES practice_sessions(id),
+  baseline_snapshot_id UUID NOT NULL REFERENCES profile_snapshots(id),
+  comparison JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE mistake_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  attempt_id UUID NOT NULL UNIQUE REFERENCES question_attempts(id) ON DELETE CASCADE,
+  error_type_id SMALLINT REFERENCES error_types(id), retry_at DATE, retry_count SMALLINT NOT NULL DEFAULT 0,
+  resolved_at TIMESTAMPTZ
+);
+CREATE TABLE uploaded_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  storage_key TEXT NOT NULL, content_type TEXT NOT NULL, size_bytes INT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'quarantined', delete_after TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE audit_log (
+  id BIGSERIAL PRIMARY KEY, actor_id UUID, action TEXT NOT NULL,
+  object_type TEXT, object_id TEXT, details JSONB, at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+Seeded 
+error_types
+:
+ 
+concept
+ (conceptual gap), 
+formula
+ (formula or recall), 
+calculation
+, 
+misread
+, 
+time
+ (time management), 
+careless
+, 
+underprepared
+, 
+application
+ (knew concept, could not apply), 
+guess
+, 
+units_rounding
+, 
+other
+.
+12.3 P1 tables (columns only; DDL written when the phase starts)
+Table
+Key columns
+commitments
+user_id, type (days or minutes), target, start_date, rest_day_used, status
+external_scores
+user_id, source, assessment_id, score, taken_at, reliability
+pattern_reports
+user_id, assessment_id, field, claim, weight, status (structure only)
+subscriptions
+, 
+payments
+, 
+coupons
+user_id, tier (sprint, season), starts_at, ends_at, gateway_ref, event_id (unique)
+reminder_settings
+user_id, channel, limit per week
+12.4 Design notes
+Normalisation:
+ third normal form for content and identity; JSONB only for derived or semi-structured data (rationale, error mix, summaries, per-weekday minutes).
+Transactions:
+ the consumer batch insert runs in one transaction; recalculation updates 
+student_topic_profiles
+, inserts a snapshot, then the plan, in one transaction per user.
+Concurrency:
+ recalculation takes a per-user advisory lock; 
+practice_sessions.recalc_status
+ changes by compare-and-set so a retried job cannot run twice; attempts are protected by the primary key.
+Ownership and access:
+ every student table has 
+user_id
+; the ORM layer exposes only owner-filtered repository methods for student routes.
+Retention
+ (to confirm with counsel): attempts, error reports and readiness history for the active period plus 12 months; security records 12 months; uploaded documents deleted after extraction or within 30 days.
+Growth:
+ partition 
+question_attempts
+ by month when volume warrants it [P, P2].
+12.5 Additions for company data mapping (revision 2)
+These tables hold facts extracted from the company-data repositories (Section 14.1) and the links between questions and company requirements. They add to, and do not replace, the tables in Section 12.2.
+-- Raw facts extracted from a source, kept as written until a person maps them
+CREATE TABLE company_pattern_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  import_batch_id UUID NOT NULL REFERENCES import_batches(id),
+  company TEXT NOT NULL,
+  round_name TEXT,                          -- for example online assessment
+  section_name TEXT,
+  topic_text TEXT,                          -- topic name exactly as written in the source
+  topic_id UUID REFERENCES topics(id),      -- null until mapped
+  question_count INT, minutes INT,
+  negative_marking TEXT, difficulty_note TEXT,
+  source_path TEXT NOT NULL,                -- file path inside the repository
+  source_commit TEXT NOT NULL,              -- pinned commit
+  status TEXT NOT NULL DEFAULT 'extracted'
+    CHECK (status IN ('extracted','mapped','used','rejected')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_cpr_company ON company_pattern_records (company, status);
+-- Phrase to taxonomy mapping, maintained by admins
+CREATE TABLE topic_synonyms (
+  phrase TEXT PRIMARY KEY,                  -- stored lower case, trimmed
+  topic_id UUID NOT NULL REFERENCES topics(id)
+);
+-- How well a question fits a section of an assessment
+CREATE TABLE question_assessment_tags (
+  question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  section_id UUID NOT NULL REFERENCES blueprint_sections(id) ON DELETE CASCADE,
+  fit REAL NOT NULL CHECK (fit BETWEEN 0 AND 1),
+  basis TEXT NOT NULL CHECK (basis IN ('topic_match','format_match','manual')),
+  computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (question_id, section_id)
+);
+CREATE INDEX idx_qat_section_fit ON question_assessment_tags (section_id, fit DESC);
+The assessment is reached through 
+blueprint_sections
+ and 
+assessment_versions
+. Tags are derived data and can be recomputed at any time.
+13. Database lifecycle and migrations
+Topic
+Specification
+Tooling
+Prisma Migrate. 
+migrate dev
+ locally, 
+migrate deploy
+ in CI and production. Raw SQL migrations are used for partial unique indexes and CHECK constraints Prisma cannot express
+Ordering
+Extensions (
+citext
+, UUID generation) → identity → taxonomy and blueprints → content → attempts → profile and plans → audit
+Seed data
+error_types
+, section and topic taxonomy, one sample assessment with blueprint, a small demo question set labelled seed, demo student and admin accounts (non-production only)
+Environments
+Separate databases for local, test (fresh per run), staging (synthetic data only), production
+Compatibility
+Expand then contract: add nullable columns, deploy code that handles both, backfill, then tighten. No column drops in the same release that stops using them
+Destructive changes
+Require an explicit human approval, a fresh backup, and a written rollback plan before running in production
+Rollback
+Prefer forward fixes; restore from backup for data-damaging failures; record the migration id deployed with each release
+Backups
+Managed daily backups with point-in-time recovery where the host provides it; retention 14 days [P]; a restore is rehearsed into a scratch database before launch and then quarterly
+Pooling
+Use the provider's pooler or PgBouncer; API pool size capped so workers plus API stay under connection limits
+Deletion
+Account deletion runs as a background job within 30 days; export and deletion are logged; backups age out on their normal cycle
+Automation
+Migrations in staging are automatic; production migrations run in the release pipeline after a human approval gate
+14. Dataset and data source specification
+ID
+Source
+Purpose
+Status
+Format and use
+Known limitations
+DS-01
+GitHub repository 
+Aptitude-For-Placements
+ by drsarveshwarbharti (https://github.com/drsarveshwarbharti/Aptitude-For-Placements)
+Seed MCQ items and solutions
+Source named by the team [C]. Contents and size 
+not yet verified
+ [U]
+Markdown and solution text per the team's note [A]; parsed to JSON by 
+tools/ingest
+; MCQ with distractors
+Answer-key accuracy unknown; topic labels may not match the taxonomy; difficulty unlabelled
+DS-02
+A Kaggle aptitude dataset
+Seed MCQ and possibly numeric items
+The team has agreed to use one but has not named it [U]
+Likely tabular (CSV); columns to be mapped once identified
+Unknown quality; must be named before PH3-T03 starts, see D-01
+DS-03
+GSM8K
+Numerical word problems for numerical ability topics only
+Named in the team's correction note [C]
+Question text with a numeric final answer; maps to 
+format = numerical
+Grade-school level, not placement-style; text solutions need review
+DS-04
+Team-authored questions and generators
+Core of the bank
+Owned by the project [C]
+Authored in the admin editor; template generators for rule-based topics
+Effort-bound; needs two reviewers for diagnostic and reassessment pools
+DS-05
+Assessment blueprint information
+Blueprints and provenance
+Officially documented or publicly available sources, student-reported structure only [C]
+Admin entries with source type, confidence and verification date
+Rarely complete; never actual questions
+DS-06
+Pilot and usage data
+Calibration and evaluation
+Consent-based [C]
+question_attempts
+ and derived tables
+Small sample; pseudonymise before any analysis outside production
+Rules for any dataset:
+ record the official URL, version or commit and download date in 
+import_batches
+ before import; do not state sample counts until the import report verifies them; keep raw files out of git (store in object storage or a gitignored 
+data/raw/
+ with a checksum manifest). If the Kaggle dataset remains unnamed, the fallback is a dataset with topic labels and answer keys; the team must approve the pick.
+Quality risks to test during import:
+ wrong answer keys, duplicates and near-duplicates, MCQs with fewer than four options or two correct options, truncated text, math markup that does not render, inconsistent difficulty, topic mislabels. Each has a validation rule in Section 15.
+Splits:
+ the bank is divided into pools instead of train and test sets. 
+diagnostic
+, 
+practice
+ and 
+reassessment
+ pools are disjoint so reassessment improvement reflects learning, not memory (DATA-003).
+14.1 Company data sources and mapping questions to company requirements (revision 2)
+Two community GitHub repositories supply company-wise material so Aptiva can map its questions to what each company's assessment asks for. They feed 
+blueprints
+ and 
+question fit tags
+. They are not treated as official sources, and they are not question banks.
+ID
+Repository
+What was visible when inspected (root level, 23 Oct 2026)
+Intended use
+Status
+DS-07
+abhishukla0807-dev/preperation-hub
+Markdown repository. A 
+Companies/
+ folder with numbered company folders; the README lists TCS, Accenture and Infosys, each with 
+00-README.md
+, 
+01-OA.md
+, 
+02-Technical.md
+, 
+03-HR.md
+ and 
+04-Experiences.md
+, and says more companies are being added. Other folders cover CS subjects, interview questions, HR and internships. 16 commits and 28 stars at inspection
+Extract online-assessment (OA) structure per company to draft blueprints; use the OA files only for structure. The aptitude material is not imported as questions
+The README describes the repository as open for everyone to use. 
+Used as a pattern source [C]
+DS-08
+Aftabkhan78621/Company_Wise_Placement_Resources
+Mostly PDFs and a zip file: folders 
+Aptitude_Bundle
+, 
+Company_Wise_Aptitude
+, 
+Company Wise Zip File
+, 
+Complete_Interview_Prep
+, and PDFs such as 
+COMPLETE_BUNDLE_All_Companies_All_Topics.pdf
+ and 
+Company_Comparison_20_MNCs.pdf
+, plus resume material. One commit and no stars at inspection; no README visible
+Reference only: which companies exist and which topics each emphasises. No bulk question import
+The origin of the PDF content is unknown. 
+Used as a reference list only [P]
+Limits of this inspection.
+ Only the root listings of both repositories were read. File contents have not been opened, so the formats of the OA files, whether they state counts and timings, and which companies DS-08 covers are 
+assumptions to verify in PH3-T07 and PH3-T08
+. At inspection DS-07 listed three companies, so the first catalogue will be small. Targets named in the workflow (for example Cognizant GenC) are not confirmed to appear in either repository and fall back to the generic blueprint until a source is found (D-16).
+Rules for using the company repositories
+Source type.
+ Everything taken from DS-07 and DS-08 is 
+candidate_reported
+ (low to medium confidence). It is raised to 
+public
+ or 
+official
+ only when a field is confirmed against an employer or assessment-vendor document. Every blueprint field shows its source and the count of agreeing sources.
+Structure only.
+ Extract sections, topic names, question counts, time limits, negative marking, difficulty notes and round names. Do 
+not
+ import or display recalled “questions asked in company X” into the bank (this keeps v1 Section 14.2). Interview and HR files are out of scope.
+Facts only.
+ Record facts (a count, a topic name, a duration) as Aptiva's own notes with the file path and commit as the reference, copy no long passages, and keep clones outside git.
+Pinned and re-checked.
+ Record the commit hash for every extraction; re-fetch each quarter and when a company format is reported to have changed.
+Conflicts.
+ Apply the v1 blueprint rules: a higher source type wins; the median after outlier removal for numeric fields from several records; a range when unresolved; the planner uses the cautious end.
+How questions are mapped to company requirements
+flowchart LR
+  R1[DS-07 and DS-08 pinned commits] --> X[Extract pattern records]
+  X --> N[Normalise topic names using synonym table]
+  N --> Q[Admin queue for unmapped phrases]
+  N --> B[Draft blueprint: sections, topic shares, pace, format mix]
+  Q --> B
+  B --> A[Admin review and publish with provenance]
+  A --> F[Fit job: question to section fit tags]
+  F --> P[Planner and mock builder use fit]
+Step
+What happens
+Output
+1. Extract
+A parser per repository reads the pinned files and writes one 
+company_pattern_records
+ row per section or topic statement
+Records with file path and commit
+2. Normalise
+Each 
+topic_text
+ is lower-cased and matched to a taxonomy topic through 
+topic_synonyms
+. Unmatched phrases go to an admin queue; the admin maps them or adds a topic (see D-04)
+topic_id
+ filled, status 
+mapped
+3. Draft blueprint
+Records for a company are grouped into a draft 
+assessment_version
+ with sections and 
+blueprint_topic_weights
+. Share comes from stated counts; if counts are missing the share is an even split flagged 
+assumption
+. 
+pace_seconds
+ is minutes divided by count where both exist. Section 
+format_mix
+ records MCQ versus numeric where stated
+Draft blueprint with an 
+assessment_sources
+ row per field
+4. Review
+An admin checks each field in the blueprint editor (P-23), edits or rejects, then publishes. One reviewer is enough for blueprints; confidence stays low with one source
+Published blueprint version
+5. Fit job
+For each published question and each section: 
+fit = topic share × format match × difficulty proximity
+, each factor between 0 and 1. Format match is the section's share of the question's format; difficulty proximity compares the question band with the section's band (1 when equal, lower as the gap grows). Admins can override with 
+manual
+ rows
+question_assessment_tags
+6. Use
+The planner already weights topics by blueprint share. Item selection and mock building additionally prefer higher 
+fit
+ for the student's target section, and never drop below the minimum bank depth for a topic and band. Section 
+pace_seconds
+ and 
+format_mix
+ set the target speed and the MCQ-to-numeric mix
+Company-style practice and mocks
+The mapping is topic-level and format-level by design. It claims no more than the sources support: a question is described as fitting a company's section, not as a question from that company's test.
+Interfaces added
+ID
+Method and path
+Access
+Purpose
+E-067
+POST 
+/admin/company-imports
+Admin
+Run an extraction from a pinned repository commit; 
+dryRun
+ lists records found, rejected and unmapped
+E-068
+GET 
+/admin/company-patterns
+Admin
+Review queue of records and unmapped phrases, filtered by company and status
+E-069
+POST 
+/admin/company-patterns/:id/map
+Admin
+Map a record or phrase to a topic, add a synonym, or reject the record
+UI: P-22 gains a 
+Company data
+ tab for E-067 and E-068; P-23 gains a 
+Draft from records
+ action; P-02 shows, for each field, the wording 
+Candidate-reported from community repositories (n sources)
+ with the last-verified date.
+Requirements added
+ID
+Requirement
+Acceptance criterion
+DATA-005
+Every field drawn from DS-07 or DS-08 carries source type 
+candidate_reported
+, the repository path and the pinned commit
+No blueprint field from these sources lacks all three
+DATA-006
+No recalled company questions are stored in 
+questions
+ or shown to students
+Import and review checks find no such items; a spot check of imported rows passes
+DATA-007
+Fit tags are derived data, recomputable, and always within 0 to 1
+Recomputing gives identical tags; a property test checks the range
+15. Data pipeline
+15.1 Content pipeline (batch, admin-triggered)
+Stage
+Input
+Output
+Processing
+Failure handling
+Test
+Fetch
+Source pinned by commit or version
+Raw files with checksum
+Download, record URL and version
+Abort if the source reference is empty
+Checksum recorded
+Parse
+Raw files
+Normalised JSON per schema
+Source-specific parser; convert markdown and solutions; strip unsupported markup
+Row-level errors collected, run continues
+Golden-file parser tests
+Classify
+JSON items
+Topic, sub-topic, difficulty prior
+Keyword and rule mapper to the taxonomy
+Unknown topic goes to 
+needs_topic
+ queue
+Mapper unit tests
+Validate
+Items
+Accepted and rejected lists
+One correct option for MCQ; parseable numeric answer; non-empty stem; length limits; at least two options
+Rejected with reason
+Validation tests
+Deduplicate
+Accepted items
+Unique items
+Normalised-text hash against bank and batch
+Duplicates reported, not inserted
+Hash tests
+Verify
+Numerical items
+Verified flag
+Recompute from solution where feasible; sample-check MCQ keys by hand
+Failed items stay draft
+Sample audit log
+Load
+Verified items
+draft
+ questions and 
+import_batches
+ row
+Single transaction per batch
+Roll back the batch on error
+Idempotent rerun test
+Review and publish
+Drafts
+published
+ questions
+Reviewer approval; two reviewers for diagnostic and reassessment pools; source required
+Blocked until complete
+Workflow tests
+15.2 Runtime attempt pipeline (request-driven plus stream)
+Browser sends the attempt with a client-generated id.
+API validates ownership, stamps server time, marks from the cached answer key, returns feedback.
+API appends the event to the 
+attempts
+ Redis Stream and updates in-session aggregates.
+Consumer group workers batch (up to 100 events or 1 second) and run 
+INSERT ... ON CONFLICT (id) DO NOTHING
+, then acknowledge. Failures retry with backoff, then go to a dead-letter stream with an alert. Redis uses append-only persistence (
+everysec
+).
+Flush barrier at finish or submit:
+ the client sends the list of attempt ids it holds; the server compares with persisted rows and stream-pending ids, waits for the stream to drain (timeout 10 s [P]), re-ingests any ids the client still holds, then enqueues recalculation.
+Recalculation (BullMQ job): load session attempts → update ratings and EMAs → aggregate error mix → snapshot → priority scoring → plan generation → change log → mark 
+recalc_status = done
+.
+Dashboard and analytics read derived tables only.
+Pipeline type:
+ content is batch; attempts are request-driven with asynchronous persistence; recalculation is an asynchronous job. 
+Lineage:
+ every question traces to its 
+import_batch
+; every plan traces to a 
+profile_snapshot
+ and an 
+engine_version
+, so any past recommendation can be reproduced.
+Data quality monitoring:
+ daily report of stream lag, dead-letter count, attempts with null 
+time_ms
+, items whose live difficulty differs from the label, items below the bank-depth threshold per topic-difficulty cell, and imbalance between pools.
+15.3 Company-data pipeline (revision 2)
+Batch, admin-triggered, separate from the question pipeline in 15.1.
+Stage
+Input
+Output
+Processing
+Failure handling
+Test
+Fetch
+Repository at a pinned commit
+Local clone outside git, checksum
+Record URL, commit and date
+Abort and report if the repository cannot be fetched at the pinned commit
+Fetch-and-pin test
+Extract
+Company files
+company_pattern_records
+Parser reads the stated structure; keeps text as written; no passages copied beyond short labels
+Unparseable files listed, run continues
+Golden-file parser tests
+Normalise
+Records
+Mapped records and an unmapped queue
+Synonym lookup; lower-case and trim
+Unmapped phrases queued, never guessed
+Mapper tests
+Draft
+Mapped records
+Draft assessment version and sources
+Share, pace and format mix rules in Section 14.1; conflict rules
+Missing counts produce flagged assumptions
+Drafter tests including median and range cases
+Review
+Draft
+Published blueprint
+Admin review in P-23
+Blocked until sources are present
+Workflow test
+Fit
+Published questions and sections
+question_assessment_tags
+Formula in Section 14.1
+Job idempotent; rerun replaces tags
+Property tests
+Lineage:
+ a blueprint field points to its 
+assessment_sources
+ row, which points to the import batch, repository path and commit.
+PART VI — ESTIMATION AND MACHINE LEARNING
+Aptiva's intelligence is 
+classical statistics, rules and optimisation implemented in TypeScript
+. There is no trained model, no pretrained model, no third-party AI API and no LLM in the MVP. Sections 16–20 are adapted accordingly: they specify an inference-only engine, how it is tuned and evaluated, and the gates that must be met before heavier models (IRT, BKT, learned classifiers) are allowed.
+16. ML problem definition
+Component
+Task type
+Input
+Output
+MVP method [C]
+Baseline for comparison
+Ability estimation
+Online rating
+Attempt outcome, question rating
+Rating, deviation, interval per topic
+Elo/Glicko-2 style with uncertainty
+Raw accuracy
+Mastery and pace
+Smoothing
+Accuracy, time per attempt
+EMA of accuracy and time, pace ratio
+Exponential moving average
+Overall mean
+Error-cause inference
+Rule classification
+Correctness, relative time, skip, numeric flags, student report
+Error type, confidence, conflict flag
+Rule table; student report is the stored label
+None (rules only)
+Readiness prediction
+Weighted simulation
+Per-topic probability at pace, blueprint shares, negative marking
+Score band with confidence
+Weighted blueprint simulation
+Overall accuracy
+Planning
+Budgeted optimisation
+Candidate activities with time and gain, budget, constraints
+Ordered blocks with rationale
+0/1 knapsack with 250 ms deadline, deterministic fallback
+Weakest-topic-first
+Why this approach:
+ a new platform has no response data, so methods must work from priors and improve with use; every output must be explainable from stored factors; the planner must be reproducible.
+Evaluation metrics and acceptance (hypotheses, not results):
+ID
+Metric
+Target
+Method
+ML-E1
+Predictive log loss and Brier score of next-attempt correctness
+Not worse than the accuracy-only baseline
+Chronological replay of pilot attempts
+ML-E2
+Interval coverage of the rating interval
+Close to nominal coverage
+Replay
+ML-E3
+Readiness mean absolute error
+Under 8 percentage points after 3 sessions (ML-003)
+Compare predicted band with actual mock scores
+ML-E4
+Score gain per study hour, planner vs weakest-topic-first
+Statistically visible at equal hours
+Pilot A/B with a control group
+ML-E5
+Plan adherence
+Above 60% of planned minutes
+Product analytics
+ML-E6
+Agreement between rule inference and student reports
+Reported for information only
+Reported vs rule labels on reported items
+No result is claimed in this guide. The implementing agent and the pilot report the actual numbers.
+Do not trust the engine when:
+ a topic has fewer than 15 attempts across two sessions; the diagnostic was the express version; the blueprint is unverified or built from assumptions; question ratings have fewer than about 30 responses; the student has been inactive for a long time (deviation grows); or reports conflict heavily with observed behaviour. In each case the UI shows wide bands, the 
+early estimate
+ label and, for topics, a probe block.
+17. Model development and training
+Training is not required for the MVP.
+ The workflow is inference-only. What exists instead is 
+engine tuning and validation
+:
+Step
+Specification
+Constants
+All tunable values live in 
+packages/engine/src/config.ts
+ with their default and a note (Section 6 of the first Implementation Guide lists them)
+Replay tool
+tools/replay
+ (TypeScript) replays logged attempts through the engine in chronological order and reports log loss, Brier score, interval coverage and plan statistics
+Leakage prevention
+Chronological splits and per-student holdouts; never tune on the same sessions used to report results
+Reproducibility
+Pure functions, a seeded random number generator wherever randomness is used, semantic 
+engine_version
+, golden test fixtures
+Approval of a new version
+Unit and property tests pass; golden plans change only intentionally and are reviewed; replay metrics are not worse than the previous version by an agreed margin [P: 2%]; the changelog explains why
+Bias check
+Compare estimate error and plan adherence across language setting and branch once the pilot has enough data; report, do not auto-correct
+Gates for heavier methods (not in MVP):
+Method
+Gate before it may be built
+2PL/3PL IRT
+More than 500 responses per item for the items being calibrated
+Bayesian Knowledge Tracing
+Long attempt sequences per sub-skill and a validated sub-skill taxonomy
+Supervised error classifier
+A large set of student-reported labels with an agreement check against the rules [P: at least 2,000 labelled errors]
+ILP planner, bandits
+Evidence that the knapsack plan is the limiting factor, plus session outcome data
+LLM explanations and hints
+Explicit approval; answer correctness always verified programmatically; outputs never decide marking
+Optional Python batch jobs
+ (PH-13 or later): embedding-based duplicate detection with an open sentence-embedding model (choose a model at implementation time) and offline item-parameter evaluation. For the MVP, item statistics (E-066) are computed with SQL aggregates inside NestJS.
+18. Inference and application integration
+Decision [C, via the v2 correction]:
+ the engine runs 
+in-process inside NestJS
+ (services and BullMQ workers) as the 
+packages/engine
+ library. A separate inference service is unnecessary because there is no model artifact, the functions are pure and fast, and a network hop would add failure modes.
+Function (all pure)
+Input
+Output
+markAttempt(question, input, ctx)
+Question with key, student input, blueprint rules
+{isCorrect, roundingSuspected, scoreDelta}
+updateRating(state, questionRating, correct)
+Rating, RD, outcome
+New rating and RD
+updateEma(state, accuracy, timeMs)
+Previous EMA, new attempt
+New EMA values
+inferError(attempt, report?)
+Observed signals and optional student report
+{type, method, confidence, conflict}
+profileFromAttempts(attempts, topics)
+Attempts for a topic set
+Topic states, evidence counts, labels
+priorities(profile, blueprint, requirement)
+Profile, blueprint weights and sources, days left
+Factor values and priority per topic
+buildCandidates(priorities, bank coverage, constraints)
+Priorities and available content
+Candidate activities with time and gain
+plan(input, budgetMs)
+Candidates, minutes, pins, mode
+Plan items, 
+plannerMethod
+, elapsed time, rationale JSON
+readinessBand(profile, blueprint)
+Per-topic probability at pace
+Band, confidence badge, factors
+compareSnapshots(baseline, current)
+Two snapshots
+Changes with noise labels
+Validation and errors.
+ Inputs are validated with zod schemas shared from 
+packages/shared
+ before calling the engine. The engine throws typed errors; services map them to 422 or 500 responses. The planner never throws to the caller: on any error or after 250 ms it returns the fallback plan.
+Limits and concurrency.
+ Planner limits: at most 200 candidates and 240 minutes per plan [P]; the knapsack table is bounded accordingly. Functions hold no state, so workers can run concurrently (default concurrency 4 [P]), and per-user recalculation is serialised with an advisory lock.
+Persistence.
+ Every snapshot, plan and readiness estimate stores 
+engine_version
+; plan items store the rationale JSON. Nothing is recomputed on read.
+Presentation.
+ Bands with badges, evidence counts, the Why this? panel, and a fixed statement on the dashboard: 
+These are practice-based estimates on our version of the test blueprint, not a prediction of the employer's result.
+Security boundary.
+ The engine has no network or file access. The answer key never leaves the server.
+19. Monitoring and re-tuning
+Signal
+Why it matters
+Alert threshold [P]
+Planner fallback rate and p95 latency
+Detects optimisation problems
+Fallback above 5% of plans
+Recalculation failure rate and duration
+Student sees stale plans
+Any failed job after retries
+Stream lag and dead-letter count
+Data loss risk
+Lag over 10 s or any dead letter
+Share of low-confidence topics
+Evidence is too thin
+Reported weekly
+Item live difficulty vs label
+Mis-tagged items skew ratings
+Flag when the gap exceeds a set band
+Item time vs expected time
+Wrong pace targets
+Same
+Error-mix shifts per topic
+Content or UI problem
+Reported weekly
+Readiness error vs actual mock scores
+Core quality metric (ML-003)
+Reported per pilot cycle
+Response.
+ A failing item is flagged to the admin queue; a high fallback rate triggers investigation of candidate volume; a drifting constant is retuned offline with the replay tool and released as a new 
+engine_version
+. 
+Rollback
+ means redeploying the previous tagged release; old plans stay explainable because they store their version. Continuous automatic retraining is 
+not
+ recommended: with small data it would add instability, and the engine has few learned parameters.
+20. ML and engine testing
+ID
+Test
+Pass condition
+T-ML-01
+Rating update unit tests
+Correct answer raises rating, wrong lowers it; RD never below minimum; step size shrinks with evidence
+T-ML-02
+EMA unit tests
+First value initialises; later values follow the weight
+T-ML-03
+Marking edge cases
+Commas, leading minus, trailing zeros, tolerance boundary, rounding-suspected, unparseable input
+T-ML-04
+Error rule table
+Every row of the table in the first Implementation Guide gives the stated result; student report is never overwritten; conflict flag set when stated
+T-ML-05
+Priority properties
+Gap zero gives priority zero; priority monotone in gap; factors within 0 to 1
+T-ML-06
+Planner properties
+Minutes sum to the budget; determinism for equal inputs; pins preserved; no more than two consecutive blocks from one topic; difficulty step at most one band
+T-ML-07
+Planner deadline
+Forced-slow knapsack returns the fallback plan with 
+plannerMethod = fallback
+ within 300 ms total
+T-ML-08
+Golden plans
+Fixture profiles produce expected 45-minute and 15-minute plans (v1 Section 7.6 example)
+T-ML-09
+Schema tests
+Shared zod schemas reject malformed engine inputs and API payloads
+T-ML-10
+Replay regression
+New engine version metrics are not worse than the previous by the agreed margin
+T-ML-11
+Integration
+Finishing a seeded session produces a new plan, a snapshot and a change log entry
+T-ML-12
+Performance
+Planner p95 under 50 ms at typical sizes; budget never exceeded
+Release gate for the engine:
+ T-ML-01 to T-ML-12 pass, golden fixtures reviewed, and 
+engine_version
+ bumped.
+PART VII — SECURITY, PRIVACY AND RELIABILITY
+21. Security architecture
+Assets:
+ student accounts and credentials; attempt and behavioural data; error reports; the question bank and answer keys (commercial value); blueprints; admin accounts; secrets; payment events (P1). 
+Trust boundaries:
+ browser to API; API to PostgreSQL and Redis; workers to the database; admin console to API; third parties (Google OAuth, email provider, Sentry, PostHog, payment gateway). 
+Entry points:
+ public auth routes, 
+/me
+ routes, session and attempt routes, admin routes, file upload, import, webhooks (P1).
+ID
+Threat
+Requirement
+Verification
+SEC-001
+Credential stuffing, brute force
+Argon2id hashing; minimum length 10 and breached-password check; rate limit and temporary lockout; generic errors; email verification
+Auth test suite; rate-limit test
+SEC-002
+Token theft or replay
+Access token about 15 minutes; rotating refresh tokens in httpOnly, Secure, SameSite cookies; reuse of an old token revokes the family; logout revokes
+Refresh reuse test
+SEC-003
+IDOR and cross-student access
+Identity from the token only; every query filtered by 
+user_id
+; ownership guard on id routes; non-guessable ids as secondary defence
+Automated cross-role and cross-user tests on every route
+SEC-004
+Privilege escalation
+Role guards on all admin routes; role stored server-side; elevation for support is time-limited and logged
+Role matrix tests
+SEC-005
+SQL injection
+Prisma parameterised queries only; raw SQL only through tagged templates; schema validation on input; least-privilege database user
+Static check for string-built SQL; injection test cases
+SEC-006
+XSS via rich question content
+Sanitise HTML on save with an allow-list; KaTeX rendering with trust disabled; Content-Security-Policy; no inline scripts; sanitised file names
+XSS payload tests in the admin editor
+SEC-007
+CSRF
+SameSite cookies; refresh endpoint requires a custom header and CORS allow-list; CSRF token for any other cookie-authenticated mutation
+CSRF test
+SEC-008
+Malicious upload
+Allow-list (PDF, PNG, JPEG, TXT), size limit, signature check, malware scan, random server names, private storage, short-lived signed links, parsing in a sandboxed worker, extracted text treated as untrusted
+Upload test set
+SEC-009
+API abuse and denial of service
+Rate limits per IP and per user; payload size limits; pagination caps; queue concurrency caps; load test
+k6 and rate-limit tests
+SEC-010
+Answer-key leakage
+Keys never in any response before submission; cached server-side only; correct option shown only after submission
+API response inspection test
+SEC-011
+Timing tampering
+Server timestamps authoritative; client times ignored; clock drift detected
+Tamper test (NFR-005)
+SEC-012
+Question-bank scraping
+Question delivery requires login; no bulk endpoints; per-user delivery tied to plans or sessions; rate limits; no pool listing for students
+Scraping simulation
+SEC-013
+Secret exposure
+Secrets in a manager or host environment variables; never in git; secret scanning in CI; rotation
+CI scan
+SEC-014
+Sensitive data in logs
+Structured logging with redaction; no passwords, tokens or free-text in logs
+Log redaction test
+SEC-015
+Excessive admin access to student data
+Admin sees aggregates; student-level access needs elevation; every access in 
+audit_log
+Audit test
+SEC-016
+Redis and database exposure
+Private network, authentication and TLS; not publicly reachable
+Infrastructure checklist
+SEC-017
+Vulnerable dependencies
+Pinned versions, lockfiles, automated audit in CI, scheduled updates
+CI audit
+SEC-018
+CORS and headers
+CORS allow-list; HSTS; 
+X-Content-Type-Options
+; frame protections; referrer policy
+Header scan
+SEC-019
+Webhook forgery (P1)
+Signature verification; idempotent handling by gateway event id
+Replay and bad-signature tests
+SEC-020
+ML-specific: gaming ratings, model abuse
+A student can only affect their own estimates; no model files or privileged inference endpoint exist; if an LLM is added later, it only rephrases verified data and its output is escaped
+Review note and tests at that time
+Frontend validation is never a security boundary. Encryption in transit (TLS 1.2 or higher with HSTS) and at rest (database volumes, backups, object storage) is required. An OWASP ZAP baseline scan runs against staging.
+22. Privacy and data governance
+Data
+Why needed
+Stored where
+Who can access
+External sharing
+Retention [P, confirm with counsel]
+Account (email, password hash, role)
+Access
+PostgreSQL
+Student; auth service
+Google OAuth if used
+Active period
+Profile (graduation year, branch, optional college, language)
+Personalisation
+PostgreSQL
+Student
+None
+Active period
+Attempts, times, skips
+Estimation and planning
+PostgreSQL
+Student; aggregates for admins
+None
+Active period plus 12 months
+Error reports
+Primary labels
+PostgreSQL
+Student
+None
+Same as attempts
+Requirements
+Planning
+PostgreSQL
+Student
+None
+Active period
+Uploaded documents
+Blueprint extraction
+Private object storage
+Student; sandboxed worker
+None
+Deleted after extraction or within 30 days
+Plans, snapshots, readiness
+Progress
+PostgreSQL
+Student
+None
+Same as attempts
+Security and audit logs
+Misuse detection
+Log store
+Engineers, restricted
+Error tracker receives redacted events
+12 months
+Analytics events
+Product funnel
+Analytics service
+Team
+PostHog or equivalent; pseudonymous ids; opt-in for model-improvement use
+Per provider settings
+Principles.
+ Collect only what personalisation and operation need: no phone number, date of birth or government id. Behavioural data is sensitive: it is never shown to other students, never sold or shared with employers, advertisers or colleges, and never used for employability scoring or hiring. Consent decisions are stored with the notice version; optional uses (analytics for model improvement, reminders) can be withdrawn without losing core features. Students can view, export, correct and delete their data (FR-027). Deletion completes within 30 days and backups age out on their normal cycle. Further use of data to improve models is opt-in, aggregated or pseudonymised, with small groups suppressed.
+Legal.
+ The design is aimed at consistency with India's Digital Personal Data Protection Act, 2023 and its rules. Compliance is 
+not
+ claimed; the team must confirm obligations, notice wording, retention periods and any minor-user handling with qualified counsel before launch. Company names are used descriptively with a non-affiliation notice and without logos.
+23. Reliability and failure handling
+Failure
+Expected behaviour
+Timeout and retry
+User message
+PostgreSQL unavailable
+Reads return 503; answer submission still marks and buffers in Redis; consumers retry
+Request timeout 5 s [P]; consumer backoff
+“We could not save everything yet. Your answers are kept; keep going.”
+Redis unavailable
+Submission falls back to a direct database write (degraded mode); if both fail, return 503 and the client keeps its local copy
+XADD timeout 200 ms [P]
+Same neutral retry notice
+Google OAuth or email provider times out
+Auth by email still works; emails queued
+5 s, 3 retries for email
+“Try again or use email sign-in.”
+Planner exceeds 250 ms or throws
+Fallback plan returned
+250 ms hard budget
+No message; the explanation shows 
+fallback
+Recalculation job fails
+Retried 3 times with backoff; status becomes 
+failed
+; practice continues
+Exponential backoff
+Neutral banner with a retry action
+Duplicate submission
+Same attempt id returns the stored result; plan generation uses 
+Idempotency-Key
+n/a
+None
+Upload interrupted
+Upload discarded; nothing parsed
+Client may retry the whole upload
+“Upload did not finish. Please try again.”
+Client goes offline mid-session
+Attempts saved locally and re-sent with the same ids
+Reconnect retry with backoff
+“Offline: your answers are saved here.”
+Deployment fails
+Health check fails; release rolled back; previous version stays
+Readiness probe
+None
+Migration errors
+Release halts before traffic shift; restore plan from backup if data affected
+n/a
+None
+Retries are used only where an operation is idempotent (attempts by id, jobs by session id, webhooks by event id). Non-idempotent operations such as payments never retry automatically.
+PART VIII — TESTING AND QUALITY ASSURANCE
+24. Test strategy
+Layer
+Tools
+Scope
+Unit
+Vitest or Jest
+Engine, services, validators, parsers
+API and integration
+supertest with a real PostgreSQL and Redis (docker compose)
+Endpoints, guards, pipeline, migrations
+Database
+Migration tests, constraint tests
+Constraints, partial unique indexes, rollback
+End to end
+Playwright
+Full student journey and admin import
+Data validation
+Parser golden files, schema tests
+Ingestion
+Security
+Authorization matrix tests, ZAP baseline, dependency audit
+Section 21
+Performance
+k6
+Submission path, plan generation, dashboard reads
+Accessibility
+axe in CI, manual keyboard pass
+Core screens
+Responsive and browser
+Playwright projects for mobile and desktop, current Chromium, Firefox and WebKit
+Core flows
+Regression
+Full suite on every pull request; replay tool on engine changes
+All
+Test data.
+ Synthetic seeds and fixtures only. Production data is never copied to staging or local environments. Staging uses generated students and the labelled seed bank.
+Key scenarios
+ID
+Feature
+Preconditions
+Input and action
+Expected result
+Failure condition
+T-001
+Registration
+No account
+Register with valid data and consent
+201; user and consent rows created
+Missing consent row
+T-002
+Refresh reuse
+Valid session
+Use an old refresh token twice
+Second use returns 401 and revokes the family
+Session stays valid
+T-003
+Cross-student access
+Two students
+Student A requests Student B's plan id
+404 or 403, no data
+Any data returned
+T-004
+Diagnostic pause
+Active diagnostic
+Pause twice
+Second pause refused (409)
+Second pause succeeds
+T-005
+MCQ marking
+Published MCQ
+Submit a wrong option
+isCorrect = false
+; key never in earlier responses
+Key leaked
+T-006
+Numeric marking
+Numerical question with tolerance
+Submit 12,50 variants and an unparseable string
+Correct within tolerance; unparseable gives 422 and attempt not consumed
+Attempt consumed on invalid text
+T-007
+Idempotency
+Submitted attempt
+Resend the same attempt id
+Same result; one row stored
+Duplicate row
+T-008
+Pipeline durability
+1,000 simulated attempts
+Kill the consumer mid-run, restart
+All persisted once
+Loss or duplicates
+T-009
+Flush barrier
+Session with buffered attempts
+Finish immediately
+Recalculation starts only after all ids persisted
+Recalculation runs on partial data
+T-010
+Error feedback priority
+Wrong, very short time
+Report 
+concept unknown
+Stored label is the report; 
+conflict = true
+; note offered
+Label overwritten
+T-011
+Profile thin evidence
+Topic with fewer than 15 attempts
+View profile
+Early estimate
+ badge and wide interval
+Firm label shown
+T-012
+Requirements validation
+Form
+Past test date; deadline after test date
+Both rejected with inline errors
+Saved
+T-013
+Planner budget
+Profile and requirement
+45 then 15 minutes
+Minutes sum exactly; plans differ; rationale present
+Sum differs
+T-014
+Planner fallback
+Forced slow knapsack
+Generate plan
+Fallback plan under 300 ms
+Timeout or error
+T-015
+Daily loop
+Seeded session
+Finish session
+New plan, snapshot, change log, What changed card
+Stale plan
+T-016
+Reassessment
+Baseline exists
+Start reassessment
+Items unseen by the student; comparison returned
+Repeated items
+T-017
+Import dry run
+Source file
+Import with rejected and duplicate rows
+Dry-run lists reasons; nothing inserted
+Partial insert
+T-018
+Publish rules
+Draft without a source
+Publish
+Rejected by constraint and API
+Published
+T-019
+Export and delete
+Student with data
+Export, then delete
+Export complete; deletion scheduled and completed within 30 days
+Data remains
+T-020
+XSS
+Admin question with script payload
+Save and view as student
+Payload neutralised
+Script runs
+25. Definition of done
+Level
+Criteria
+Component
+Meets its requirement IDs; unit and integration tests pass; typed and linted; documented; no TODOs hiding required behaviour
+Phase
+Every task done; phase tests pass in CI; completion gate met; handover note written; no work from later phases
+ML and engine
+T-ML-01 to T-ML-12 pass; golden plans reviewed; 
+engine_version
+ set; replay metrics recorded
+Security readiness
+SEC-001 to SEC-020 each have a passing verification or a documented accepted risk; ZAP baseline and dependency audit clean of high findings
+Release readiness
+Staging verified end to end; migrations rehearsed; backup restore rehearsed; rollback tested; monitoring and alerts live; legal and privacy notices reviewed by the team
+Final project
+Section 38 checklist fully satisfied; pilot evaluation report produced; documentation complete
+A feature is not done because code exists. It must satisfy its requirement, have passing tests, work through the real stack, and be documented.
+PART IX — DEPLOYMENT, HOSTING AND DEVOPS
+26. Hosting and infrastructure plan
+No provider or budget has been chosen [U] (decision D-05). The table gives proposed options. Providers, plans and prices change, so the agent must check current offerings and limits before committing.
+Component
+Proposed choice [P]
+Alternatives
+Requirements and notes
+Frontend
+Vercel
+Netlify, Cloudflare Pages
+Server rendering for public pages; automatic HTTPS and CDN; preview deployments per pull request
+API service
+One container service (Render, Fly.io or Railway)
+AWS ECS, a VPS with Docker
+Stateless; at least two instances for staging-to-production parity of behaviour under load; health check on 
+/health
+Worker service
+A second container service from the same image, different start command
+Same host
+Runs BullMQ processors and stream consumers; scaled independently
+PostgreSQL
+Managed PostgreSQL with point-in-time recovery
+Neon, Supabase, RDS, Render PG
+Private or allow-listed access; connection pooler; automatic backups
+Redis
+Managed Redis that supports 
+Streams and append-only persistence
+Redis Cloud, provider add-on
+Verify persistence and Streams support, and that per-command pricing is acceptable for the attempt stream; private network and TLS
+Object storage
+S3-compatible bucket (AWS S3 or Cloudflare R2)
+Provider storage
+Private bucket, signed links, lifecycle rule to delete uploads
+ML inference
+None in the MVP
+n/a
+Optional Python batch job runs as a scheduled task later
+Domain and DNS
+Registrar plus the DNS provider of the frontend host
+Any
+Apex and 
+www
+ redirect; separate 
+api
+ subdomain
+HTTPS
+Automatic certificates from the hosts
+Let's Encrypt
+HSTS enabled
+Secrets
+Host secret stores
+Cloud secret manager
+Never in git; separate values per environment
+Networking
+Database and Redis not public; API reaches them over a private network or an IP allow-list
+Same
+Firewall rules documented
+Scheduled jobs
+BullMQ repeatable jobs
+Provider cron
+Deletion job, daily data-quality report, session expiry
+CDN and caching
+Frontend host CDN; 
+Cache-Control
+ for public pages; no caching of 
+/me
+ APIs
+Same
+Question content served only through authenticated APIs
+Scaling
+Add API instances horizontally; add workers when stream lag grows
+Same
+Placement-season spikes: pre-warm before known drives
+Cost categories to estimate once providers are chosen:
+ frontend hosting, two container services, managed database, managed Redis, object storage and egress, email delivery, error tracking and analytics, domain, payment gateway fees (P1), and engineering time for the load test. Free tiers are acceptable for development and early staging, but their sleep behaviour and limits make them unsuitable for the load test or the student pilot; plan a small paid tier for those.
+Local is not production.
+ Differences to test on staging: TLS and cookies on real domains, CORS, connection limits, Redis persistence, cold starts, and managed-database latency.
+27. Environments and configuration
+Environment
+Purpose
+Data
+Services
+Differences
+Local
+Development
+Seed data only
+docker compose PostgreSQL and Redis; mock email; Google OAuth in test mode
+Insecure cookies allowed on localhost; verbose logs
+Test (CI)
+Automated tests
+Fresh database per run; fixtures
+Ephemeral PostgreSQL and Redis containers
+No external calls
+Staging
+Pre-release verification
+Synthetic students and seed bank
+Same topology as production, smaller
+Payment gateway in test mode; load tests run here
+Production
+Real use
+Real data
+Managed services
+Secrets from the host; backups and alerts on; debug logging off
+27.1 Environment template (placeholders only)
+# apps/api/.env.example
+NODE_ENV=development
+PORT=4000
+DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/aptiva
+REDIS_URL=redis://localhost:6379
+JWT_ACCESS_SECRET=replace-with-long-random-value
+JWT_ACCESS_TTL_SECONDS=900
+REFRESH_TOKEN_TTL_DAYS=30
+COOKIE_DOMAIN=localhost
+CORS_ORIGINS=http://localhost:3000
+GOOGLE_CLIENT_ID=replace
+GOOGLE_CLIENT_SECRET=replace
+GOOGLE_REDIRECT_URI=http://localhost:4000/api/v1/auth/google/callback
+EMAIL_API_KEY=replace
+EMAIL_FROM=noreply@example.com
+S3_ENDPOINT=replace
+S3_BUCKET=replace
+S3_ACCESS_KEY=replace
+S3_SECRET_KEY=replace
+SENTRY_DSN=
+POSTHOG_KEY=
+PLANNER_BUDGET_MS=250
+STREAM_BATCH_MAX=100
+STREAM_BATCH_MS=1000
+FLUSH_BARRIER_TIMEOUT_MS=10000
+ENGINE_VERSION=1.0.0
+# P1 billing
+PAYMENT_KEY_ID=
+PAYMENT_KEY_SECRET=
+PAYMENT_WEBHOOK_SECRET=
+# apps/web/.env.example
+NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
+NEXT_PUBLIC_APP_ENV=development
+The frontend receives only public variables. Real secrets are set in the host's secret store and never committed.
+28. CI/CD and release process
+Stage
+Specification
+Automated or approved
+Version control
+GitHub; trunk-based with short-lived branches; conventional commit messages; protected 
+main
+Policy
+Pull request
+Required checks and at least one review; description lists the task IDs
+Human review
+CI checks
+Install with lockfile, lint, type check, unit tests, integration tests with service containers, build, dependency audit, secret scan, OpenAPI diff check
+Automated
+Staging deploy
+Merge to 
+main
+ deploys to staging; migrations applied; smoke tests and Playwright run
+Automated
+Production deploy
+Git tag triggers a release pipeline; 
+manual approval
+ before migrations and traffic shift
+Human approval
+Order
+Run migrations (expand-only) → deploy API and worker → health and readiness checks → shift traffic → smoke test
+Automated after approval
+Rollback
+Redeploy the previous tag; forward-fix migrations; restore only for data damage
+Human decision
+Release notes
+Generated from commits and task IDs; includes migration ids and engine version
+Automated draft, human edit
+29. SEO, performance and accessibility
+Topic
+Requirement
+Indexable pages
+Only P-01 and P-02 (public blueprint pages); each has a unique title, description and canonical URL
+Private pages
+All app and admin routes are disallowed in 
+robots.txt
+ and send 
+noindex
+; they are never in the sitemap
+Sitemap
+Generated from published assessment slugs
+Redirects
+www
+ to apex (or the reverse) with a permanent redirect; HTTP to HTTPS
+Structured data
+Not required; add only if it is accurate for blueprint pages [P]
+Content integrity
+Blueprint pages show provenance, last-verified date, non-affiliation notice, and no logos
+Mobile performance
+Targets [P]: good Core Web Vitals thresholds on public pages; first load of the runner under 200 KB of JavaScript beyond shared chunks where practical; lazy-load charts and KaTeX
+Assets
+Optimised images, long-lived caching for hashed assets, fonts with fallbacks
+Accessibility
+WCAG 2.1 AA targets; semantic HTML; keyboard navigation; visible focus; labelled inputs; sufficient contrast; reduced-motion support
+Browsers
+Current and previous major versions of Chromium, Firefox and Safari; mobile Chrome and Safari
+30. Monitoring, backups and maintenance
+Area
+Specification
+Before launch
+Recurring
+Logs
+Structured JSON with request id; redaction; central log store
+Yes
+Review weekly
+Errors
+Sentry for web, API and workers
+Yes
+Triage weekly
+Uptime
+External check on 
+/health
+ and a public page
+Yes
+Continuous
+Health endpoints
+/health
+ (liveness) and 
+/ready
+ (database and Redis reachable)
+Yes
+n/a
+Metrics
+Request latency, error rate, stream lag, queue depth, planner fallback rate, recalculation duration
+Yes
+Dashboard review
+Database
+Connection count, slow queries, storage, replication or backup status
+Yes
+Monthly review
+Alerts [P]
+Error rate spike, p95 latency over target, stream lag over 10 s, any dead letter, failed recalculation after retries, backup failure, disk over 80%
+Yes
+Tune after the pilot
+Backups
+Daily with PITR where offered; 14-day retention; restore rehearsal
+Rehearse once
+Quarterly rehearsal
+Security patching
+Base images and runtime updated
+Baseline
+Monthly
+Dependencies
+Automated update pull requests; audit in CI
+Yes
+Weekly
+Incident response
+Runbook: detect, contain, communicate, fix, review; user and regulator notification steps to be confirmed with counsel
+Draft
+Review after each incident
+Cost
+Budget alerts on every provider
+Yes
+Monthly
+Capacity
+Review before each placement season; load test again after major changes
+Yes
+Seasonal
+Documentation
+Keep runbooks and ADRs current
+Yes
+With each release
+PART X — REPOSITORY AND IMPLEMENTATION DETAILS
+31. Repository structure
+aptiva/
+  apps/
+    web/                       Next.js app
+      app/(public)/            P-01, P-02, auth pages
+      app/(student)/           P-06 to P-19
+      app/(admin)/             P-20 to P-24
+      components/              feature and shared components
+      lib/api/                 generated API client, hooks
+      tests/                   component and e2e specs
+    api/                       NestJS service
+      src/modules/             auth, users, catalog, questions, diagnostic, attempts,
+                               feedback, profile, requirements, planner, practice,
+                               reassessment, analytics, admin, billing(P1), notifications(P1)
+      src/common/              guards, filters, interceptors, logging, config
+      src/workers/             stream consumer, recalculation, email, deletion jobs
+      test/                    integration and API tests
+  packages/
+    engine/                    pure TypeScript engine
+      src/rating.ts ema.ts marking.ts errors.ts priority.ts
+      src/candidates.ts planner.ts readiness.ts compare.ts config.ts index.ts
+      test/                    unit, property and golden fixtures
+    shared/                    zod schemas, DTO types, enums, OpenAPI types
+  tools/
+    ingest/                    source parsers and import CLI
+    replay/                    engine replay and evaluation
+  services/
+    batch/                     optional Python offline jobs (P2)
+  prisma/                      schema.prisma, migrations, seed.ts
+  infra/                       Dockerfiles, docker-compose.yml, host configuration
+  docs/                        see Section 33
+  data/raw/                    gitignored; checksum manifest only is committed
+  .github/workflows/           ci.yml, deploy-staging.yml, release.yml
+  .env.example files           placeholders only
+Directory or file
+Responsibility
+packages/engine
+All estimation, marking, error rules, priority and planning logic; no framework imports; the most heavily tested code
+packages/shared
+Single source of truth for schemas and types used by web and API
+apps/api/src/modules/attempts
+Submission, stream append, consumers, flush barrier
+tools/ingest
+One parser per source plus the common validate, dedupe and load steps
+tools/replay
+Offline evaluation of engine versions
+prisma/schema.prisma
+Data model; raw SQL migrations for partial indexes and checks
+infra/docker-compose.yml
+Local PostgreSQL and Redis
+Do not commit datasets, secrets, build outputs or generated files. Large raw data stays outside git with a manifest of source, version and checksum.
+32. Configuration and dependency management
+Runtime and package manager:
+ current Node.js LTS and pnpm workspaces [P] (npm workspaces are an acceptable alternative). Lockfile committed. Node version recorded in 
+.nvmrc
+ and 
+engines
+.
+Python (optional):
+ a pinned virtual environment with a lockfile in 
+services/batch
+.
+Config:
+ typed configuration module in 
+apps/api/src/common/config
+ validating environment variables at start-up; the app refuses to start on missing required values.
+Reproducing from a clean checkout:
+Install Node (version from 
+.nvmrc
+) and pnpm; run 
+pnpm install --frozen-lockfile
+.
+Copy each 
+.env.example
+ to 
+.env
+ and fill placeholders for local use.
+Run 
+docker compose -f infra/docker-compose.yml up -d
+ for PostgreSQL and Redis.
+Run 
+pnpm prisma migrate dev
+ then 
+pnpm db:seed
+.
+Run 
+pnpm dev
+ to start web and API; run 
+pnpm worker:dev
+ for the stream consumer and jobs.
+Task
+Command [P]
+Lint and type check
+pnpm lint
+, 
+pnpm typecheck
+Unit tests
+pnpm test
+Integration tests
+pnpm test:integration
+ (requires docker compose)
+End to end
+pnpm e2e
+Load test
+pnpm k6:submit
+, 
+pnpm k6:plan
+Migrations
+pnpm prisma migrate dev
+ (local), 
+pnpm prisma migrate deploy
+ (CI and production)
+Import dry run
+pnpm ingest <source> --version <pin> --dry-run
+Engine replay
+pnpm replay --from <date>
+Build
+pnpm build
+33. Documentation deliverables
+File
+Purpose
+README.md
+What Aptiva is, quick start, commands
+docs/PROJECT_OVERVIEW.md
+Problem, scope, requirements (links to this guide)
+docs/ARCHITECTURE.md
+Architecture, chosen versions, decision records
+docs/UI_WORKFLOWS.md
+Screens, components, workflows
+docs/API.md
+ plus generated OpenAPI
+Endpoint contracts
+docs/DATABASE.md
+Schema, ER diagram, migration notes
+docs/DATASETS.md
+Sources, import batches
+docs/ENGINE.md
+Formulas, constants, versions, evaluation results
+docs/SECURITY.md
+Threat model, controls, test results
+docs/PRIVACY.md
+Data inventory, retention, user rights
+docs/TESTING.md
+Strategy, commands, scenario list
+docs/DEPLOYMENT.md
+Environments, release steps, rollback
+docs/RUNBOOK.md
+Operations, alerts, incident response
+docs/STATUS.md
+Phase and task status, known issues, decisions log
+This guide stays the specification; the files above hold implementation detail and must not duplicate it wholesale.
+PART XI — PHASED IMPLEMENTATION ROADMAP
+34. Ordered phases
+Phases are grouped so that each one ends with a coherent, verifiable result, not with a layer built in isolation. Stage 1 of the student journey is complete at PH-7 (milestone M1); the daily adaptive loop, which is the core demo, is complete at PH-8 (milestone M2).
+ID
+Phase
+Result
+Priority
+Can run in parallel with
+PH-0
+Foundation, versions and decisions
+Reproducible repo, CI, local services, health endpoint
+P0
+none
+PH-1
+Identity, RBAC, consent
+Working sign-up, login, roles, app shell
+P0
+PH-2 backend work
+PH-2
+Content foundation
+Taxonomy, questions (MCQ and numeric), blueprints, admin CRUD, public blueprint pages, marking function
+P0
+PH-1 frontend
+PH-3
+Ingestion and seed bank
+Parsers, dry-run import, first verified bank
+P0
+PH-4
+PH-4
+Attempt pipeline
+Server marking, Redis stream, consumers, flush barrier, degraded mode
+P0
+PH-3
+PH-5
+Diagnostic, result analysis, error feedback
+Journey steps 2–4
+P0
+none
+PH-6
+Estimation engine and baseline profile
+Journey step 5
+P0
+none
+PH-7
+Requirements, planner, first plan
+Journey steps 6–7, 
+milestone M1
+P0
+none
+PH-8
+Practice runner and daily loop
+Journey steps 8–11, 
+milestone M2
+P0
+none
+PH-9
+Reassessment, re-plan, cram, history
+On-demand features
+P1 (reassessment basic is P0)
+PH-10
+PH-10
+Privacy, security, reliability hardening
+Export and delete, SEC verification
+P0 before any pilot
+PH-9
+PH-11
+Testing, performance, accessibility
+Full suite, load test, a11y pass
+P0
+none
+PH-12
+Deployment and release
+Staging and production, domain, monitoring
+P0
+none
+PH-13
+Post-launch and P1/P2 backlog
+Pilot evaluation, billing, multi-target and others
+P1 to P3
+various
+flowchart TD
+  PH0[PH-0 Foundation] --> PH1[PH-1 Identity]
+  PH0 --> PH2[PH-2 Content]
+  PH2 --> PH3[PH-3 Ingestion]
+  PH2 --> PH4[PH-4 Attempt pipeline]
+  PH1 --> PH4
+  PH3 --> PH5[PH-5 Diagnostic and feedback]
+  PH4 --> PH5
+  PH5 --> PH6[PH-6 Estimation and profile]
+  PH6 --> PH7[PH-7 Planner and first plan: M1]
+  PH7 --> PH8[PH-8 Practice and daily loop: M2]
+  PH8 --> PH9[PH-9 Reassessment and adaptive]
+  PH8 --> PH10[PH-10 Privacy and security]
+  PH9 --> PH11[PH-11 Testing and performance]
+  PH10 --> PH11
+  PH11 --> PH12[PH-12 Deployment]
+  PH12 --> PH13[PH-13 Post-launch backlog]
+35. Phase specifications
+Every phase table has the same rows so the agent can check completeness. “Tests” lists what must be written and run; “Verification” lists observable outcomes, and the agent must report the 
+actual
+ results.
+PH-0 — Foundation, versions and decisions
+Item
+Specification
+Objective
+A clean checkout can be installed, started, tested and linted by anyone, with CI enforcing it
+Why now, dependencies
+Everything depends on a reproducible base. Needs only human approval of the defaults in Section 40 (D-01 to D-05 may stay open; they do not block PH-0)
+Tasks
+PH0-T01
+ Look up current stable or LTS versions of every Section 6 package, check peer compatibility, pin in lockfiles, record in 
+docs/ARCHITECTURE.md
+. 
+PH0-T02
+ Create the monorepo layout from Section 31 with empty modules. 
+PH0-T03
+ Add 
+infra/docker-compose.yml
+ (PostgreSQL, Redis), 
+.env.example
+ files, and a typed config module that fails fast on missing variables. 
+PH0-T04
+ Initialise Prisma with a baseline migration (extensions only); add 
+/health
+ and 
+/ready
+ (E-080). 
+PH0-T05
+ Configure lint, formatting, type checking, test runners and pre-commit hooks. 
+PH0-T06
+ Create CI (install with frozen lockfile, lint, typecheck, unit, integration with service containers, dependency audit, secret scan). 
+PH0-T07
+ Create 
+README.md
+, 
+docs/STATUS.md
+ and the docs skeleton
+Implementation notes
+packages/engine
+ and 
+packages/shared
+ exist with one trivial exported function and schema each, to prove workspace linking. No business logic yet. Redis must be configured with append-only persistence in compose so later work matches production behaviour
+Tests
+Config validation test (missing variable fails); health and readiness integration tests (ready returns 503 when Redis is stopped); workspace import smoke test
+Verification
+pnpm install --frozen-lockfile
+, 
+docker compose up -d
+, 
+pnpm test
+, 
+pnpm lint
+, 
+pnpm typecheck
+ all succeed; 
+GET /api/v1/health
+ returns 200; CI is green on a pull request
+Deliverables
+Repository skeleton, CI workflow, compose file, env templates, docs skeleton, recorded versions
+Blockers
+None
+Completion gate
+All verification commands pass on a clean clone and in CI; versions recorded; no feature code exists
+Handover
+List of pinned versions, any compatibility workarounds, commands that work, open decisions
+PH-1 — Identity, RBAC and consent
+Item
+Specification
+Objective
+Students can register, verify, log in and out; roles are enforced; consent is recorded
+Why now, dependencies
+Every later feature needs identity and ownership. Depends on PH-0
+Tasks
+PH1-T01
+ Migrations and Prisma models for 
+users
+, 
+refresh_tokens
+, 
+consent_records
+, 
+student_profiles
+. 
+PH1-T02
+ E-001 to E-007 with Argon2id, breached-password check, refresh rotation with reuse detection, Google OAuth with state and PKCE, email verification and reset. 
+PH1-T03
+ Guards: authentication, role, ownership; rate limiting. 
+PH1-T04
+ Audit-log writer and request-id middleware. 
+PH1-T05
+ Frontend auth pages P-03 to P-05, student and admin shells, route guards, API client with refresh-on-401. 
+PH1-T06
+ Consent notice versioning
+Implementation notes
+Refresh token in an httpOnly, Secure, SameSite cookie; access token in memory. Generic login error. Cookie-authenticated mutations require the custom header or CSRF token (SEC-007). Mail sending uses a provider adapter with a console adapter for local use
+Tests
+T-001, T-002; lockout and rate-limit tests; role matrix tests (student cannot reach admin routes); password-reset single-use test; component tests for forms
+Verification
+Register, verify, login, refresh, logout through the UI and API; reuse of an old refresh token returns 401 and revokes the family; consent row stored with notice version
+Deliverables
+Auth module, guards, auth UI, tests, OpenAPI for E-001 to E-007
+Blockers
+Google OAuth credentials (test project) for the OAuth task; email provider key for non-local environments
+Completion gate
+FR-001, FR-002 acceptance criteria met; SEC-001 to SEC-004 verified for auth routes
+Handover
+Guard usage conventions, how to add a protected route, test accounts
+PH-2 — Content foundation
+Item
+Specification
+Objective
+Admins can manage topics, questions of both formats, lessons and blueprints; public blueprint pages exist; marking logic exists as a tested pure function
+Why now, dependencies
+The diagnostic, planner and pipeline all consume content. Depends on PH-0 (and PH-1 for admin auth; schema and engine work can start earlier)
+Tasks
+PH2-T01
+ Migrations for taxonomy, assessments and blueprints, questions, options, reviews, lessons, 
+error_types
+, 
+import_batches
+ (Section 12.2). 
+PH2-T02
+ Seed taxonomy (four sections, 10–12 topics, sub-topics) and 
+error_types
+. 
+PH2-T03
+ 
+packages/engine
+ 
+markAttempt
+ for MCQ and numerical with tolerance and rounding flag. 
+PH2-T04
+ Admin APIs E-060, E-061, E-064, E-065 with format-specific validation, server-side HTML sanitisation and the publish rules (source required; one correct option; numeric answer required). 
+PH2-T05
+ Public APIs E-055, E-056. 
+PH2-T06
+ Frontend P-01, P-02 and admin screens P-20, P-21, P-23, P-24 with KaTeX preview. 
+PH2-T07
+ Generic fallback blueprint and a seeded sample blueprint with provenance
+Implementation notes
+Provenance and confidence displayed on P-02 for every field. Two reviewers are required for the diagnostic and reassessment pools. Question delivery to students will use dedicated endpoints later; the admin list never exposes keys to students
+Tests
+T-ML-03, T-018, T-020; constraint tests for 
+numerical_needs_answer
+, 
+uq_one_correct
+ and 
+published_needs_source
+; API tests for E-060 validation; component tests for the editor
+Verification
+Create an MCQ and a numerical question in the UI; attempt to publish without a source and see rejection; view the public blueprint page with provenance badges
+Deliverables
+Content schema and seeds, admin console v1, public pages, 
+markAttempt
+, tests
+Blockers
+Final topic taxonomy (proposed in seed; team confirms)
+Completion gate
+FR-009, FR-020 (without bulk import), DATA-001 met; marking tests pass
+Handover
+Taxonomy ids, seed instructions, how to add a blueprint
+PH-3 — Ingestion and seed bank
+Item
+Specification
+Objective
+Open sources are imported safely and traceably; the bank has usable depth and a coverage report
+Why now, dependencies
+The diagnostic needs enough items. Depends on PH-2. 
+Uses the sources named in Section 14 (the Kaggle dataset must be named first, D-01), with one parser
+ for each source
+Tasks
+PH3-T01
+ Build 
+tools/ingest
+ with the common pipeline (fetch pinned, parse, classify, validate, dedupe, verify, load as draft). 
+PH3-T02
+ Parser for DS-01 (GitHub repository) after reading its structure. 
+PH3-T03
+ Parser for DS-02 once named. 
+PH3-T04
+ Parser for DS-03 (numerical only). 
+PH3-T05
+ Admin import UI P-22 and APIs E-062, E-063 with dry-run and batch reversal. 
+PH3-T06
+ Coverage report by topic-difficulty cell and pool; plan for team-authored items to fill gaps (target 400–600 reviewed items, at least 8–10 per cell)
+Implementation notes
+Pool assignment: diagnostic and reassessment pools are filled only from items with two approvals. Never state counts before the import report verifies them
+Tests
+Golden-file parser tests; T-017; dedupe tests; batch reversal test; schema validation tests
+Verification
+Dry run of one source prints accepted, rejected and duplicate rows; real import creates 
+draft
+ items linked to an 
+import_batch
+; coverage report lists cells below threshold
+Deliverables
+Ingest tool, parsers for the sources unblocked so far, import UI, coverage report, import batch records
+Blockers
+D-01; reviewer capacity
+Completion gate
+At least one source imported end to end with an import batch record; DATA-001 to DATA-004 checks run (DATA-004 may report gaps that team authoring must fill before PH-5 demo)
+Handover
+Parser versions, rejected-row patterns, coverage gaps, authoring backlog
+PH-3 addendum (revision 2): company data tasks.
+ These extend PH-3 and depend on decision D-16.
+Task
+Specification
+PH3-T07
+Parser for DS-07: read the company folders at a pinned commit, write 
+company_pattern_records
+; first confirm the real structure and whether counts and timings are stated
+PH3-T08
+DS-08: build a coverage and topic-emphasis list by hand or by text extraction from the PDFs; no bulk question import
+PH3-T09
+Topic synonym table, mapper and admin queue (E-067 to E-069, P-22 tab)
+PH3-T10
+Blueprint drafter from mapped records with provenance, conflict rules and flagged assumptions; review in P-23
+PH3-T11
+Fit job writing 
+question_assessment_tags
+; planner and mock builder read it as a preference (planner use lands in PH7-T04)
+Tests:
+ golden-file parser tests; fetch-and-pin test; mapper and drafter tests (median, outlier removal, range, even-split assumption); fit property tests (0 to 1, recomputation stable). 
+Completion gate addition:
+ at least one company blueprint drafted from DS-07 with 
+candidate_reported
+ provenance, reviewed and published; fit tags exist for published questions in that company's topics; DATA-005 to DATA-007 checks pass; no recalled-question text in 
+questions
+.
+PH-4 — Attempt pipeline
+Item
+Specification
+Objective
+Answers are marked and timed on the server, buffered through Redis, persisted exactly once, and reconciled at session end
+Why now, dependencies
+Diagnostic and practice both depend on it. Depends on PH-1, PH-2
+Tasks
+PH4-T01
+ Migrations for 
+practice_sessions
+, 
+question_attempts
+. 
+PH4-T02
+ 
+AttemptService
+: ownership check, server timestamps, cached answer keys, marking, idempotency by attempt id. 
+PH4-T03
+ Redis Stream producer and consumer group; batch insert with 
+ON CONFLICT DO NOTHING
+; backoff, dead-letter stream, pending reclaim. 
+PH4-T04
+ Degraded mode: direct database write when Redis fails; 503 when both fail. 
+PH4-T05
+ Flush barrier with reconciliation against the client's id list. 
+PH4-T06
+ Session endpoints E-040, E-041, E-042 (finish returns 202 and enqueues a placeholder job). 
+PH4-T07
+ k6 script for the submission path
+Implementation notes
+Respond before any database wait. Server stamps 
+shownAt
+ when the question is served and 
+answeredAt
+ when the answer arrives. Append-only persistence on Redis. Configuration values from Section 27.1
+Tests
+T-005 to T-009; crash-recovery test (kill consumer); degraded-mode tests; clock-tamper test; NFR-003 timing test with the database paused
+Verification
+1,000 simulated attempts persist exactly once; submission p95 under 150 ms with PostgreSQL paused; killing and restarting the consumer loses nothing
+Deliverables
+Attempt module, workers, k6 script, tests, operations notes for stream monitoring
+Blockers
+A Redis instance that supports Streams and persistence
+Completion gate
+FR-004, NFR-003, NFR-005, SEC-010, SEC-011 verified
+Handover
+Stream and group names, alert thresholds, how to replay the dead-letter stream
+PH-5 — Diagnostic, result analysis and error feedback
+Item
+Specification
+Objective
+A new student can take the diagnostic, see an analysed result, and explain their mistakes
+Why now, dependencies
+First half of Stage 1. Depends on PH-3 (bank depth), PH-4
+Tasks
+PH5-T01
+ Migrations for diagnostic and feedback tables. 
+PH5-T02
+ Diagnostic composer: 24–30 items across four sections, 30/45/25 difficulty mix, mixed formats, disjoint from reassessment pool; express variant of 10–15 minutes. 
+PH5-T03
+ E-010 to E-014 with a single pause and a 48-hour partial rule. 
+PH5-T04
+ Result analysis function and E-015: topic and difficulty accuracy, time versus expected, skip patterns, consistency, thin-evidence list. 
+PH5-T05
+ 
+inferError
+ in the engine and E-016 with reported and rule methods and the conflict flag. 
+PH5-T06
+ UI P-06 to P-09 including 
+ErrorCausePicker
+ and 
+ConflictNote
+Implementation notes
+Student report is always the stored label. The result is computed after the flush barrier. Express diagnostic results are flagged coarse
+Tests
+T-004, T-010, T-ML-04; result analysis unit tests with fixtures; Playwright test of the diagnostic with keyboard only
+Verification
+Complete a diagnostic in the UI, see the result, tag errors, observe a conflict note for a quick wrong answer reported as concept unknown
+Deliverables
+Diagnostic module, result analysis, feedback module, UI P-06 to P-09, tests
+Blockers
+Enough published diagnostic-pool items (coverage report)
+Completion gate
+FR-003, FR-005, FR-006 acceptance criteria met
+Handover
+Composition rules, thresholds used for inference, known coverage gaps
+PH-6 — Estimation engine and baseline profile
+Item
+Specification
+Objective
+The diagnostic produces a baseline profile with intervals, evidence counts and error mix
+Why now, dependencies
+The planner needs profile state. Depends on PH-5
+Tasks
+PH6-T01
+ Migrations for 
+student_topic_profiles
+, 
+profile_snapshots
+. 
+PH6-T02
+ 
+rating.ts
+, 
+ema.ts
+ and 
+config.ts
+ in 
+packages/engine
+ (formulas and defaults in the first Implementation Guide, Section 6). 
+PH6-T03
+ 
+profileFromAttempts
+: per-topic rating, deviation, EMAs, attempt count, reported versus observed error mix, label (Weak, Moderate, Strong) derived from estimate and interval, thin-evidence flag below 15 attempts across two sessions. 
+PH6-T04
+ Job that runs after diagnostic submit and the flush barrier: update topic profiles and write the baseline snapshot (
+is_baseline = true
+). 
+PH6-T05
+ E-020 and UI P-10 (
+ProfileRadar
+, 
+TopicTable
+, baseline comparison placeholder). 
+PH6-T06
+ Small-step question rating updates with a minimum response count. 
+PH6-T07
+ 
+tools/replay
+ skeleton reporting log loss and interval coverage on synthetic data
+Implementation notes
+Never display a single bare number. Express diagnostics are labelled coarse. The job is idempotent by diagnostic id
+Tests
+T-ML-01, T-ML-02, T-011; idempotent job test; snapshot content test
+Verification
+After a diagnostic, P-10 shows each topic with a range, item count, error mix split and 
+early estimate
+ where evidence is thin; rerunning the job changes nothing
+Deliverables
+Engine modules, profile module, P-10, replay skeleton, tests
+Blockers
+None beyond PH-5
+Completion gate
+FR-007, ML-001, ML-002 met
+Handover
+Constants used, label thresholds, known simplifications
+PH-7 — Requirements, planner and first plan (milestone M1)
+Item
+Specification
+Objective
+The student enters requirements and receives a time-boxed first plan with reasons; Stage 1 works end to end
+Why now, dependencies
+Completes the setup workflow. Depends on PH-2 (blueprints), PH-6
+Tasks
+PH7-T01
+ Migrations for requirements, plans, items, change log, readiness estimates. 
+PH7-T02
+ E-021 with validation rules; E-022 document upload is optional and may be deferred to PH-13 [P]. 
+PH7-T03
+ Blueprint resolution: assessment-specific blueprint with provenance and confidence, or the generic fallback with an unverified notice. 
+PH7-T04
+ Engine: 
+priorities
+, 
+buildCandidates
+, 
+plan
+ (knapsack with 250 ms deadline and fallback), rationale JSON, 
+readinessBand
+. 
+PH7-T05
+ E-030, E-031, E-032, E-033, E-036. 
+PH7-T06
+ UI P-11, P-12, 
+WhyThisPanel
+, readiness band. 
+PH7-T07
+ Automatic first-plan generation after requirements are saved; first change-log entry
+Implementation notes
+Block types: concept repair (needs a reviewed lesson), targeted practice, timed set, formula revision, mixed check, speed drill, short review, maintenance, probe for thin-evidence topics. Minutes sum exactly to the budget. Strong topics keep a maintenance item. Student pins are honoured. Fixed explanation templates, no free text generation
+Tests
+T-012, T-013, T-014, T-ML-05 to T-ML-08, T-ML-12; Playwright test of the full Stage 1 journey
+Verification
+Complete the journey from sign-up to a first plan; the 45-minute and 15-minute plans differ and each sums to its budget; forcing a slow knapsack yields a fallback plan; Why this? values equal the stored rationale
+Deliverables
+Requirements and planner modules, P-11 and P-12, golden plan fixtures, e2e test
+Blockers
+At least one reviewed lesson per weak-topic candidate (content task)
+Completion gate
+Milestone M1:
+ FR-008, FR-011, FR-012, NFR-002 met; Stage 1 e2e passes
+Handover
+Rationale JSON schema, planner constants, content gaps blocking richer plans
+PH-8 — Practice runner and daily loop (milestone M2)
+Item
+Specification
+Objective
+Students practise the plan, get instant feedback, and see the profile, dashboard and next plan update
+Why now, dependencies
+The core demo. Depends on PH-7 and PH-4
+Tasks
+PH8-T01
+ Start a session from a plan block (E-040) with item selection: unseen preferred, difficulty step of at most one band, topic limits. 
+PH8-T02
+ Runner UI P-14 with MCQ and numeric input, display timer, instant feedback, one-tap cause chips. 
+PH8-T03
+ Finish flow: flush barrier, then the recalculation job updates ratings, EMAs and error mix, writes a snapshot and readiness estimate, regenerates the plan for future days only, and writes the change log with the top three changes. 
+PH8-T04
+ E-043 summary and polling UI P-15. 
+PH8-T05
+ Dashboard P-13: 
+ReadinessBars
+, readiness band, priority ranking, low-priority list, today's plan, 
+WhatChangedCard
+. 
+PH8-T06
+ Mistake notebook E-044 and P-17 with a fixed retry ladder (1, 3, 7, 14 days [P]). 
+PH8-T07
+ Concept-repair lessons shown before targeted questions
+Implementation notes
+Recalculation failure never blocks practice and shows a neutral retry. Updates never change a session already started. Wording is neutral; no guilt or red warnings
+Tests
+T-015; recalculation idempotency and retry tests; Playwright daily-loop test; component tests for the runner
+Verification
+Finish a seeded session and observe a new plan, an updated dashboard, and a What changed card with three items; stop the worker and confirm practice continues
+Deliverables
+Practice module, recalculation worker, P-13 to P-15, P-17, tests
+Blockers
+Content depth for the topics practised
+Completion gate
+Milestone M2:
+ FR-010, FR-013 to FR-016 (summary), FR-018, FR-019 met; NFR-004 verified
+Handover
+Recalculation job contract, retry policy, dashboard data sources
+PH-9 — Reassessment and adaptive features
+Item
+Specification
+Objective
+Students can reassess at any time and the plan reacts to changed inputs
+Why now, dependencies
+Builds on M2. Depends on PH-8
+Tasks
+PH9-T01
+ Reassessment builder E-050 using unseen items from the same topic and difficulty cells; shorten and tell the student if the pool is exhausted. 
+PH9-T02
+ Comparison E-051 with noise labels (a change inside the interval reads 
+too early to tell
+) and retention checks. 
+PH9-T03
+ UI P-18. 
+PH9-T04
+ Re-plan when time, dates or targets change or days are missed: compress, no backlog. 
+PH9-T05
+ Cram mode for the last 48 hours: no new heavy concepts, speed drills and formula review. 
+PH9-T06
+ Plan history, restore, pins and keep-my-plan setting (E-033 to E-035, P-16) [P1]. 
+PH9-T07
+ Block feedback: 
+already know this
+, 
+too easy
+, 
+not relevant
+ [P1]
+Implementation notes
+A test taken outside the plan counts the same as a planned one. Updates apply to future days only
+Tests
+T-016; cram and re-plan scenario tests; restore test; noise-label tests
+Verification
+Changing daily time from 60 to 20 minutes re-plans without backlog; a reassessment shows a baseline comparison and a new plan
+Deliverables
+Reassessment module, re-plan and cram logic, P-16, P-18, tests
+Blockers
+Bank depth for disjoint pools
+Completion gate
+FR-017 (P0), FR-021 and history parts of FR-016 (P1) met
+Handover
+Pool-exhaustion behaviour, cram rules
+PH-10 — Privacy, security and reliability hardening
+Item
+Specification
+Objective
+The system is safe to give to real students
+Why now, dependencies
+Mandatory before the pilot. Depends on PH-8; can run alongside PH-9
+Tasks
+PH10-T01
+ Export, delete and consent withdrawal (E-070 to E-072, P-19) with re-authentication and a deletion job. 
+PH10-T02
+ Security headers, CSP, CORS allow-list, cookie review. 
+PH10-T03
+ Complete authorization matrix (every route by role and by owner). 
+PH10-T04
+ Upload security chain if uploads exist. 
+PH10-T05
+ Failure and degraded-mode tests from Section 23. 
+PH10-T06
+ Audit logging of admin access and support elevation. 
+PH10-T07
+ ZAP baseline scan and dependency audit fixes. 
+PH10-T08
+ Draft privacy notice and consent text for review by counsel. 
+PH10-T09
+ Retention jobs
+Implementation notes
+Do not claim legal compliance; list items for counsel. Deletion removes data within 30 days and records the action without personal content
+Tests
+T-003, T-019, T-020; SEC-001 to SEC-020 verification cases; chaos tests that stop Redis, PostgreSQL and the worker
+Verification
+A student exports then deletes an account; cross-user requests fail on every route; ZAP baseline shows no high findings
+Deliverables
+Privacy module, hardening changes, 
+docs/SECURITY.md
+ and 
+docs/PRIVACY.md
+ with results
+Blockers
+Counsel review is external and can follow later, but the pilot waits for it
+Completion gate
+Security-readiness DoD met; FR-027, NFR-006, NFR-009 checklist complete
+Handover
+Accepted risks, open legal items
+PH-11 — Testing, performance and accessibility
+Item
+Specification
+Objective
+Quality targets are measured, not assumed
+Why now, dependencies
+Needs the feature set stable. Depends on PH-9 and PH-10
+Tasks
+PH11-T01
+ End-to-end test of the 12-step journey including the 45-to-15 minute change. 
+PH11-T02
+ k6 load test at the NFR-008 target on a staging-like environment, measuring p95 latency, stream lag and flush-barrier time. 
+PH11-T03
+ Query review with 
+EXPLAIN
+ on dashboard, plan and result paths; add indexes as needed. 
+PH11-T04
+ axe scan and manual keyboard and screen-reader pass. 
+PH11-T05
+ Responsive and browser matrix. 
+PH11-T06
+ Engine replay on seeded and synthetic data. 
+PH11-T07
+ Defect burn-down
+Implementation notes
+Record actual numbers in 
+docs/TESTING.md
+; do not copy targets as results
+Tests
+All suites in Section 24
+Verification
+Reports show measured values against NFR-001, -002, -007, -008, -010
+Deliverables
+Test reports, fixes, performance notes
+Blockers
+A staging-like environment (can be local compose for a first pass)
+Completion gate
+Targets met or deviations accepted in writing
+Handover
+Known limits, recommended capacity
+PH-12 — Deployment and release
+Item
+Specification
+Objective
+A secure, monitored production system with a rehearsed rollback
+Why now, dependencies
+Last step before users. Depends on PH-11 and decision D-05
+Tasks
+PH12-T01
+ Provision staging and production (Section 26). 
+PH12-T02
+ Deployment pipelines with the manual approval gate (Section 28). 
+PH12-T03
+ Domain, DNS, HTTPS, HSTS. 
+PH12-T04
+ Secrets in host stores. 
+PH12-T05
+ Monitoring, alerts, uptime checks. 
+PH12-T06
+ Backup and restore rehearsal. 
+PH12-T07
+ Runbook and release notes. 
+PH12-T08
+ 
+robots.txt
+, sitemap, 
+noindex
+ on private routes. 
+PH12-T09
+ Production smoke test and secure creation of the first admin. 
+PH12-T10
+ Pilot readiness review against Section 38
+Implementation notes
+Never copy production data to staging. Migrations in production run only after approval and a fresh backup
+Tests
+Staging smoke and e2e; rollback drill; restore drill
+Verification
+Production health and a full journey with a test account; alerts fire on a forced failure; restore into a scratch database succeeds
+Deliverables
+Live system, runbook, deployment documentation
+Blockers
+D-05, domain ownership, provider accounts
+Completion gate
+Release-readiness DoD met
+Handover
+Access list, runbook, alert routing
+PH-13 — Post-launch and backlog
+ID
+Item
+Priority
+Prerequisite
+PH13-T01
+Pilot evaluation (baseline and post mocks, control group, report with real metrics)
+P1
+Pilot cohort, consent
+PH13-T02
+Billing and tiers: Free, Sprint Pass (7–14 days), Season Pass (1–3 months), idempotent webhooks
+P1
+Gateway account, legal terms
+PH13-T03
+Multiple targets with date and priority split
+P1
+M2
+PH13-T04
+Commitment streak with rest day and neutral wording
+P1
+M2
+PH13-T05
+External score log (manual and CSV)
+P1
+M2
+PH13-T06
+Pattern reports and drift alerts
+P1
+Reputation rules
+PH13-T07
+Reminders and weekly summary
+P1
+Consent for reminders
+PH13-T08
+Hindi and regional-language interface
+P1
+Translation review
+PH13-T09
+Information-based adaptive diagnostic
+P2
+Calibrated items
+PH13-T10
+Python batch jobs: embedding deduplication and item statistics
+P2
+Bank size
+PH13-T11
+IRT and BKT
+P3
+Gates in Section 17
+PH13-T12
+ILP planner and bandits
+P3
+Session outcome data
+PH13-T13
+LLM explanations and hints with verified answers
+P3
+Explicit approval
+PH13-T14
+Coding and interview modules
+P3
+New scope decision
+36. Prioritisation and task tracking
+Class
+Meaning
+Examples
+P0 Critical
+Core system cannot function or be safe without it
+Phases PH-0 to PH-8, PH-10 to PH-12, FR items marked P0
+P1 High
+Required by the agreed core scope but after the core loop
+Re-plan, cram, history, billing, multi-target, streak
+P2 Medium
+Quality or usability improvements
+Information-based diagnostic, Python batch jobs
+P3 Optional
+Future enhancements
+IRT, BKT, ILP, bandits, LLM features, new modules
+Parallel work.
+ PH-1 frontend and PH-2 backend; PH-3 and PH-4; PH-9 and PH-10; team authoring of questions and lessons runs continuously from PH-2. 
+Sequential.
+ PH-5 needs PH-3 and PH-4; PH-6 needs PH-5; PH-7 needs PH-6; PH-8 needs PH-7; PH-11 needs PH-9 and PH-10; PH-12 needs PH-11.
+Tracking.
+ Phase and task IDs (PH#, PH#-T##) are stable and never renumbered; new work gets new IDs. 
+docs/STATUS.md
+ holds a table of task ID, status (not started, in progress, blocked, done), owner, linked requirement IDs, test IDs and notes. Optional enhancements are never prerequisites for core phases.
+37. First implementation milestone
+The first phase to execute is PH-0 — Foundation, versions and decisions.
+ The agent must not start PH-1 until the team approves PH-0.
+Item
+Specification
+Objective
+Reproducible repository with CI, local services, validated configuration and a health endpoint
+Exact tasks
+PH0-T01 to PH0-T07 (Section 35)
+Expected files
+package.json
+ and workspace config, lockfile, 
+.nvmrc
+, 
+apps/web
+, 
+apps/api
+, 
+packages/engine
+, 
+packages/shared
+, 
+tools/
+ and 
+prisma/
+ skeletons, 
+infra/docker-compose.yml
+, 
+.env.example
+ files, 
+.github/workflows/ci.yml
+, 
+README.md
+, 
+docs/ARCHITECTURE.md
+ (with pinned versions), 
+docs/STATUS.md
+Required tests
+Config validation, health and readiness integration tests, workspace smoke test
+Verification
+pnpm install --frozen-lockfile
+; 
+docker compose -f infra/docker-compose.yml up -d
+; 
+pnpm lint
+; 
+pnpm typecheck
+; 
+pnpm test
+; 
+GET /api/v1/health
+ returns 200; 
+/ready
+ returns 503 when Redis is stopped; CI green. The agent reports the actual outputs
+Completion criteria
+All verification items pass on a clean clone and in CI; versions recorded with reasons
+Must remain unimplemented
+Authentication, any database table beyond the baseline migration, any UI beyond a placeholder page, engine logic beyond the smoke function, any deployment
+PART XII — FINAL HANDOVER SPECIFICATION
+38. Final project acceptance checklist
+Every item is traceable to a requirement or an operational responsibility. The agent marks an item done only with evidence (test output, a screenshot, a log, or a written confirmation).
+Area
+Checklist item
+Traces to
+Requirements
+All P0 requirements in Section 2.3 are met; P1 items are done or recorded as deferred with approval
+FR-001 to FR-028
+Workflows
+W-01 to W-10 run end to end on staging with a test account, including all listed failure paths
+Section 4
+UI and accessibility
+Screens P-01 to P-24 exist with loading, empty, error and success states; axe has no serious findings; keyboard-only completion of the diagnostic works
+NFR-007, NFR-010
+Frontend
+Auth, route guards, error boundaries, polling for recalculation, offline resume in the runner
+Section 9
+Backend
+Modules in Section 10.2 implemented with guards, validation and logging
+Section 10
+APIs
+Every endpoint in Section 11 matches the OpenAPI spec; envelopes and error codes consistent; idempotency verified
+Section 11
+Database
+Migrations apply on a clean database; constraints verified; seed works; restore rehearsed
+Sections 12, 13
+Data pipelines
+Ingestion dry run and import traceable; attempt pipeline durable; flush barrier verified
+Sections 14, 15; DATA-001 to DATA-004
+Engine
+T-ML-01 to T-ML-12 pass; golden plans reviewed; 
+engine_version
+ stored
+Sections 16–20; ML-001 to ML-004
+Security and privacy
+SEC-001 to SEC-020 verified or risk accepted; export, delete, consent withdrawal work; privacy notice reviewed by counsel
+Sections 21, 22; FR-027
+Testing
+Unit, integration, e2e, security, accessibility and load reports stored in 
+docs/TESTING.md
+ with actual numbers
+Section 24
+Performance
+Measured against NFR-001, -002, -003, -008
+PH-11
+Hosting
+Staging and production running per the chosen providers; private database and Redis
+Section 26
+Domain and HTTPS
+Valid certificates, HSTS, redirects, separate API subdomain
+PH12-T03
+CI/CD
+Pipelines green; production deploy requires approval; rollback drill done
+Section 28
+Monitoring and backups
+Uptime, errors, alerts, backup and restore proven
+Section 30
+SEO
+Public blueprint pages indexable; private routes 
+noindex
+ and disallowed; sitemap valid
+Section 29
+Documentation
+All files in Section 33 present and current
+Section 33
+Maintenance and handover
+Runbook, access list, task status and open decisions handed over
+PH-12 handover
+39. Requirements traceability matrix
+Acceptance criteria for each requirement are in Section 2. Test IDs not defined in Section 24 are created in the named phase.
+Req
+Description
+Screen / workflow
+Module and API
+Tables
+Engine
+Phase and task
+Test
+FR-001
+Register and login
+P-03, P-04; W-01
+auth; E-001 to E-006
+users, refresh_tokens, consent_records
+none
+PH1-T02
+T-001, T-002
+FR-002
+Student profile
+P-03, P-19; W-01
+users; E-007
+student_profiles
+none
+PH1-T01, T05
+T-001
+FR-003
+Setup diagnostic
+P-06, P-07; W-02
+diagnostic; E-010 to E-014
+diagnostic_tests, question_attempts
+markAttempt
+PH5-T02, T03
+T-004, T-005
+FR-004
+Server marking and timing
+P-07, P-14
+attempts; E-012, E-041
+question_attempts
+markAttempt
+PH-4
+T-005 to T-009
+FR-005
+Result analysis
+P-08; W-03
+diagnostic; E-015
+diagnostic_results
+result analysis
+PH5-T04
+PH-5 fixtures
+FR-006
+Error-cause feedback
+P-09; W-03
+feedback; E-016
+attempt_error_feedback, attempt_error_inference
+inferError
+PH5-T05
+T-010, T-ML-04
+FR-007
+Baseline profile
+P-10; W-04
+profile; E-020
+student_topic_profiles, profile_snapshots
+rating, ema, profileFromAttempts
+PH-6
+T-011, T-ML-01, T-ML-02
+FR-008
+Requirements form
+P-11; W-05
+requirements; E-021
+preparation_requirements
+none
+PH7-T02
+T-012
+FR-009
+Blueprint catalogue
+P-02, P-23; W-05, W-09
+catalog; E-055, E-056, E-064
+assessments, versions, sources, sections, weights
+none
+PH2-T04, T07
+T-018, blueprint tests
+FR-010
+Readiness Gap dashboard
+P-13; W-06
+analytics; E-031, E-036
+readiness_estimates
+readinessBand
+PH7-T04, PH8-T05
+PH-8 e2e
+FR-011
+Time-boxed planner
+P-12; W-05
+planner; E-030
+practice_plans, practice_plan_items
+plan
+PH7-T04
+T-013, T-014
+FR-012
+Rationale and Why this?
+P-12; W-05
+planner; E-032
+practice_plan_items.rationale
+priorities
+PH7-T04, T06
+T-ML-05, T-ML-08
+FR-013
+Practice runner
+P-14; W-06
+practice; E-040, E-041
+practice_sessions, question_attempts
+markAttempt
+PH8-T01, T02
+T-006, runner e2e
+FR-014
+One-tap error tag
+P-14
+feedback; E-016
+attempt_error_feedback
+inferError
+PH8-T02
+T-010
+FR-015
+Post-session recalculation
+P-15; W-06
+practice, profile; E-042, E-043
+practice_sessions, snapshots, plans
+all
+PH8-T03
+T-009, T-015
+FR-016
+What changed and history
+P-12, P-13, P-16; W-06, W-08
+planner; E-033, E-034
+plan_change_log
+compare
+PH8-T03, PH9-T06
+T-015, restore test
+FR-017
+Reassessment
+P-18; W-07
+reassessment; E-050, E-051
+reassessment_results
+compareSnapshots
+PH-9
+T-016
+FR-018
+Mistake notebook
+P-17; W-06
+practice; E-044
+mistake_entries
+none
+PH8-T06
+notebook tests
+FR-019
+Concept-repair lessons
+P-14; W-06
+questions; E-065
+lessons
+none
+PH2-T04, PH8-T07
+lesson coverage check
+FR-020
+Admin console and import
+P-20 to P-24; W-09
+admin, questions; E-060 to E-066
+questions, import_batches
+none
+PH-2, PH-3
+T-017, T-018, T-020
+FR-021
+Re-plan and cram
+P-11; W-08
+planner; E-021, E-030
+practice_plans
+plan
+PH9-T04, T05
+T-ML-06, cram tests
+FR-022 to FR-026
+Multi-target, streak, external log, pattern reports, billing
+P1 screens
+PH-13 modules
+commitments, external_scores, pattern_reports, payments
+as needed
+PH13-T02 to T06
+Defined in PH-13
+FR-027
+Export, delete, consents
+P-19; W-10
+privacy; E-070 to E-072
+consent_records, audit_log
+none
+PH10-T01
+T-019
+FR-028
+Reminders
+P-19
+notifications
+reminder_settings
+none
+PH13-T07
+Defined in PH-13
+NFR-001
+Latency targets
+all
+all
+indexes
+none
+PH11-T02, T03
+k6 reports
+NFR-002
+Planner budget
+P-12
+planner
+plans
+plan
+PH7-T04
+T-014, T-ML-07
+NFR-003
+Submission without database wait
+P-14
+attempts
+question_attempts
+none
+PH4-T02, T03
+PH-4 timing test
+NFR-004
+Degradation
+P-14, P-15
+attempts, workers
+none
+none
+PH8-T03
+worker-stop test
+NFR-005
+Timing integrity
+P-07, P-14
+attempts
+question_attempts
+none
+PH-4
+clock-tamper test
+NFR-006
+Security baseline
+all
+cross-cutting
+audit_log
+none
+PH-10
+SEC verification
+NFR-007
+Accessibility
+all
+none
+none
+none
+PH11-T04
+axe, manual
+NFR-008
+Concurrency target
+P-14
+attempts
+none
+none
+PH11-T02
+k6
+NFR-009
+Privacy alignment
+P-19
+privacy
+consent_records
+none
+PH10-T08
+checklist
+NFR-010
+Responsive
+all
+none
+none
+none
+PH11-T05
+Playwright matrix
+DATA-001 to DATA-004
+Provenance, batches, pools, depth
+P-22
+questions
+questions, import_batches
+none
+PH-2, PH-3
+T-017, T-018, coverage report
+ML-001 to ML-004
+Pure versioned engine, intervals, MAE, probes
+P-10, P-13
+planner, profile
+snapshots, plans
+all
+PH-6, PH-7, PH13-T01
+T-ML-01 to T-ML-12
+40. Known risks and unresolved decisions
+40.1 Risks
+ID
+Risk
+Likelihood and impact
+Mitigation
+R-01
+A source repository changes or is removed
+Medium, high
+Pin commits; keep import batch records and extracted facts; keep team-authored items as the core
+R-02
+Bank too shallow for disjoint diagnostic, practice and reassessment pools
+High, high
+Coverage report from PH-3; authoring backlog; generators for rule-based topics
+R-03
+Target bands challenged as inaccurate
+High, high
+Provenance, bands, confidence badges, student override, honest wording
+R-04
+Redis Streams durability or cost on the chosen host
+Medium, high
+Verify support and pricing early; degraded direct-write mode; reconciliation at finish
+R-05
+Estimates unreliable from small samples
+Certain, medium
+Wide bands, evidence counts, probe blocks, re-estimate after practice
+R-06
+Scope creep in one semester
+High, medium
+Strict P0 list; backlog IDs
+R-07
+Content authoring effort for questions and lessons underestimated
+High, high
+Start in PH-2; assign owners; review capacity plan
+R-08
+Load behaviour untested until late
+Medium, medium
+k6 script in PH-4, full test in PH-11
+R-09
+Student data breach
+Low to medium, high
+Section 21 controls; minimal data; logging redaction
+R-10
+Free-tier hosting limits distort pilot results
+Medium, medium
+Paid small tier for staging and pilot
+R-11
+Incumbents copy the planner
+Medium, high
+Behavioural data, optimisation core, execution speed
+R-12
+Students stop after a few days
+High, high
+Short sessions, neutral reminders, visible progress
+40.2 Decisions
+“Blocker” means work cannot proceed past the named point without a decision. “Default” means the agent may proceed using the recommended default and record it.
+ID
+Decision
+Recommended default
+Consequence if unresolved
+Type
+D-01
+Which Kaggle dataset
+None; the team must name it with URL
+PH-3 imports only DS-01 and team items; bank depth may be short
+Blocker for PH3-T03 only
+D-03
+Diagnostic includes Data Interpretation
+Yes, four areas
+Examples and planner scenarios would need rewriting if removed
+Default
+D-04
+Final topic taxonomy
+Quant: percentages, ratio and proportion, time speed and distance, time and work, permutation and combination, probability, number series; Reasoning: logical reasoning (puzzles, arrangements); DI; Verbal: reading comprehension, grammar and vocabulary
+Seed taxonomy may need migration later
+Default
+D-05
+Hosting provider and budget
+Section 26 proposal with a small paid tier for staging and pilot
+Cannot complete PH-12
+Blocker for PH-12
+D-06
+LLM features
+Excluded from MVP
+None
+Default
+D-07
+Export and deletion before pilot
+Mandatory
+Pilot cannot start
+Default
+D-08
+Load target
+500 concurrent for the course; 5,000 as product goal
+Less certainty about peak behaviour
+Default
+D-09
+Payments in course scope
+Out of MVP; PH13-T02
+None for the demo
+Default
+D-10
+Per-company facts (numeric entry, negative marking, cutoffs)
+Store per blueprint with provenance; never assert without a source
+Plans use cautious ranges
+Default
+D-11
+Package manager
+pnpm workspaces
+Minor tooling change
+Default
+D-12
+Lesson authoring
+Team writes at least one reviewed lesson per weak-topic candidate before the M1 demo
+Concept-repair blocks cannot appear
+Default with owner needed
+D-13
+Legal review under DPDP Act
+Draft notice and consent; counsel review before pilot
+Pilot waits
+Blocker for the pilot
+Decisions added in revision 2.
+ID
+Decision
+Recommended default
+Consequence if unresolved
+Type
+D-14
+How the 10–12 minute Stage 1 target relates to a 30-minute diagnostic
+Standard diagnostic (about 30 minutes) and express diagnostic (10–15 minutes); the 10–12 minute target applies to the express path
+The v1 metric of a first plan in under 10 minutes cannot be met on the standard path
+Default
+D-16
+Companies not covered by the repositories (for example Cognizant GenC if absent)
+Use the generic blueprint with an unverified notice; add a source later
+Those targets get lower-confidence plans
+Default
+41. Instructions for the AI Coding Agent Receiving This Guide
+You are receiving this guide with no access to the conversations that produced it. Follow these rules.
+Treat this guide as the primary project specification.
+ Where it conflicts with your assumptions, the guide wins; raise conflicts instead of resolving them silently.
+Read the entire guide before making implementation changes.
+Inspect the existing repository before creating or modifying files.
+Identify completed work and reuse it
+ instead of duplicating it. Check 
+docs/STATUS.md
+ first.
+Verify dependency versions and compatibility
+ using the rule in Section 6, and record what you chose.
+Follow the defined architecture, API contracts, database schema and security requirements.
+ Propose changes through a written note; do not change contracts silently.
+Implement only the current authorised phase.
+Do not implement future phases early,
+ including “quick” scaffolding for them.
+Write and run appropriate tests
+ for everything you add or change.
+Never claim that tests, builds, deployments or integrations succeeded unless you executed them and saw them succeed.
+ If you could not run something, say so.
+Report the commands you ran, the results you observed, the files you changed and any blockers.
+Do not change agreed requirements or add unrelated features.
+ Mark any idea outside scope as a suggestion.
+Keep documentation and task status updated
+ (
+docs/STATUS.md
+, relevant files in 
+docs/
+).
+Stop at the phase completion gate and wait for approval
+ before starting the next phase.
+Also: stop and ask before importing any dataset, before any destructive migration, before spending money on infrastructure, and whenever a decision in Section 40.2 marked as a blocker applies. Never put secrets, datasets or real student data in the repository or in logs.
+41.1 Reusable phase-execution template
+Copy this, fill the angle-bracket fields, and give it to the agent for each phase.
+PHASE EXECUTION REQUEST
+1. Current phase and objective: <PH-n name, objective from Section 35>
+2. Prerequisites: <phases that must be approved, decisions that must be resolved, accounts or keys needed>
+3. Tasks to implement: <task IDs PHn-Tnn with one-line descriptions>
+4. Files and areas to inspect or modify: <paths, modules, tables, screens>
+5. Rules: follow the guide; implement only this phase; no future-phase work;
+   no silent changes to requirements, contracts or schema.
+When finished, return a COMPLETION REPORT with:
+ A. Summary of implementation changes (by task ID)
+ B. Files created, modified and deleted
+ C. Commands executed, with the actual output or result observed
+ D. Tests executed and actual results (pass, fail, skipped, with reasons)
+ E. Acceptance criteria status: each requirement ID and its criterion, met or not met, with evidence
+ F. Known issues, limitations and workarounds
+ G. Unresolved decisions or new questions (reference Section 40.2 IDs)
+ H. Documentation updated (files and what changed) and STATUS.md updated
+ I. Handover notes for the next phase
+ J. Confirmation: no work from future phases was performed, and nothing is reported
+    as passing that was not actually run
+Stop after the report and wait for approval before continuing.
+42. Glossary
+Term
+Meaning
+Readiness Gap
+Difference between the student's estimated level at pace and the internal planning target band for a topic
+Baseline profile
+The first skill, performance and error estimate, built from the setup diagnostic and shown as an early estimate
+Blueprint
+Structured description of an assessment (sections, durations, counts, negative marking, topic shares) with a source type and confidence per field
+Provenance
+The source type of a blueprint field: official, public, candidate-reported, pattern-inferred or assumption
+Pool
+A disjoint set of questions reserved for diagnostic, practice or reassessment
+Cell
+One topic and difficulty combination used to measure bank depth
+Rationale
+JSON stored on each plan item holding the exact factors behind it; rendered as Why this?
+Engine
+The pure TypeScript library that does marking, rating, error inference, priority, planning and readiness
+RD
+Rating deviation, the uncertainty of a rating
+EMA
+Exponential moving average
+Pace ratio
+Student's average time divided by the blueprint's expected time for the topic
+Flush barrier
+The step at session end that waits until all buffered attempts are persisted before recalculation
+Probe block
+A short practice block that gathers evidence for a thin-evidence topic
+Maintenance block
+A small review that keeps a strong topic from decaying
+Cram mode
+Final 48 hours: high-yield review and speed drills, no new heavy topics
+Planner fallback
+The deterministic priority-ranked plan used when the knapsack exceeds its 250 ms budget
+43. Self-audit
+Check
+Result
+Every known core feature represented
+Yes: FR-001 to FR-028 with P0, P1 and out-of-scope split
+Major workflows have a technical path
+Yes: W-01 to W-10 mapped to screens, endpoints, tables and engine functions
+Important screens specified
+Yes: P-01 to P-24 with components in Section 8
+Frontend, API and database agree
+Endpoint IDs, screen IDs and table names cross-referenced; the agent must still verify against the generated OpenAPI and migrations
+Datasets documented accurately
+Sources are listed with unverified contents and size; the Kaggle dataset is unnamed
+Training and inference distinguished
+Yes: no training in the MVP; inference-only engine; gates for later models
+Security throughout
+Sections 21 to 23 plus phase tasks and DoD
+Testing and acceptance actionable
+Section 24 scenarios, T-ML tests, per-phase verification
+Deployment covers production
+Sections 26 to 30 and PH-12, subject to decision D-05
+Phases have gates; first phase identified
+Yes: Section 35 and Section 37 name PH-0
+No unverified facts as decisions
+Versions are not pinned; dataset counts are marked unknown; metrics are targets, not results
+Known gaps the team must fill:
+ the Kaggle dataset name; a confirmed visual identity; content volume and lesson authoring capacity; hosting provider and budget; legal review; and tuning of every engine constant on real data. P1 table DDL is intentionally deferred to the phase that builds it.

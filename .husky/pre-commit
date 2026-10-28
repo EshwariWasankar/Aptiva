@@ -1,0 +1,5 @@
+#!/bin/sh
+# Pre-commit hook: run lint and typecheck before committing
+# This will be set up with husky after git initialization
+
+pnpm lint && pnpm typecheck

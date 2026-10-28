@@ -1,0 +1,12 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'tools/*'
+allowBuilds:
+  '@nestjs/core': true
+  '@prisma/engines': false
+  '@scarf/scarf': false
+  argon2: false
+  msgpackr-extract: false
+  prisma: false
+  unrs-resolver: false

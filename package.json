@@ -1,0 +1,48 @@
+{
+  "name": "aptiva",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Aptiva - Planning layer above question banks for aptitude assessment preparation",
+  "engines": {
+    "node": ">=22.15.1",
+    "pnpm": ">=12.15.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter \"./apps/**\" dev",
+    "dev:web": "pnpm --filter @aptiva/web dev",
+    "dev:api": "pnpm --filter @aptiva/api start:dev",
+    "worker:dev": "pnpm --filter @aptiva/api start:worker",
+    "build": "pnpm --filter \"./apps/**\" --filter \"./packages/**\" build",
+    "test": "pnpm --filter \"./apps/**\" --filter \"./packages/**\" test",
+    "test:integration": "pnpm --filter @aptiva/api test:integration",
+    "e2e": "pnpm --filter @aptiva/web e2e",
+    "lint": "pnpm --filter \"./apps/**\" --filter \"./packages/**\" lint",
+    "typecheck": "pnpm --filter \"./apps/**\" --filter \"./packages/**\" typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "prisma": "pnpm --filter @aptiva/api prisma",
+    "prisma:migrate": "pnpm prisma migrate dev",
+    "prisma:migrate:deploy": "pnpm prisma migrate deploy",
+    "db:seed": "pnpm prisma db seed",
+    "k6:submit": "k6 run k6/scripts/submit.js",
+    "k6:plan": "k6 run k6/scripts/plan.js",
+    "ingest": "node tools/ingest/dist/index.js",
+    "replay": "node tools/replay/dist/index.js",
+    "prepare": "husky install"
+  },
+    "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "husky": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.9.0",
+    "@willsoto/nestjs-prometheus": "^5.0.0",
+    "@nestjs/schedule": "^3.0.0"
+  },
+  "packageManager": "pnpm@12.15.0"
+}

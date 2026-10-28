@@ -1,0 +1,17 @@
+{
+  "name": "@aptiva/replay",
+  "version": "0.0.0",
+  "private": true,
+  "bin": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aptiva/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

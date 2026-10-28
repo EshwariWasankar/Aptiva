@@ -1,0 +1,82 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Baseline migration - extensions only
+// More tables will be added in later phases
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  action    String
+  details   Json?
+  createdAt DateTime @default(now())
+}
+
+model Question {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String
+  topic     String
+  sourceUrl String
+  createdAt DateTime @default(now())
+}
+
+model DiagnosticAttempt {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  questionId  Int
+  answer      String
+  isCorrect   Boolean
+  timeMs      Int
+  createdAt   DateTime @default(now())
+
+  @@index([userId, questionId])
+}
+
+model Plan {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  date      DateTime @default(now())
+  blocks    Json      // array of {topic, minutes, rationale}
+  createdAt DateTime @default(now())
+}
+
+model Blueprint {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  sourceUrl   String?
+  createdAt   DateTime @default(now())
+}
+
+model ModelVersion {
+  id          Int      @id @default(autoincrement())
+  version     String
+  description String?
+  createdAt   DateTime @default(now())
+  predictions MlPrediction[]
+}
+
+model MlPrediction {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  topicId       Int
+  ability       Float
+  confidence    Float
+  modelVersionId Int
+  createdAt     DateTime @default(now())
+
+  user    User   @relation(fields: [userId], references: [id])
+  topic   Topic  @relation(fields: [topicId], references: [id])
+  version ModelVersion @relation(fields: [modelVersionId], references: [id])
+  @@unique([userId, topicId])
+}
