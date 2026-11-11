@@ -1,0 +1,514 @@
+// Aptiva database schema — playbook Section 12.2.
+//
+// PH-0: extensions only. PH-1 adds identity tables: users, refresh_tokens,
+// consent_records, student_profiles, plus auth_tokens (single-use email
+// verification / password-reset tokens — the "token store" referenced by
+// E-006, which Section 12.2 does not name explicitly) and audit_log
+// (PH1-T04 audit writer).
+//
+// CHECK constraints and partial indexes that Prisma cannot express live in
+// the hand-written migration SQL only.
+//
+// Prisma 7 uses the Rust-free "prisma-client" generator with a required
+// output path and a driver adapter (@prisma/adapter-pg) at runtime.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../apps/api/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Connection URL lives in prisma.config.ts (Prisma 7).
+}
+
+// ---------------------------------------------------------------- Identity
+
+model User {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String    @unique @db.Citext
+  passwordHash        String?   @map("password_hash")
+  googleSub           String?   @unique @map("google_sub")
+  role                String    @default("student")
+  emailVerifiedAt     DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  deletionRequestedAt DateTime? @map("deletion_requested_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  refreshTokens  RefreshToken[]
+  consents       ConsentRecord[]
+  profile        StudentProfile?
+  authTokens     AuthToken[]
+  questionReviews QuestionReview[]
+  practiceSessions PracticeSession[]
+  questionAttempts QuestionAttempt[]
+  diagnosticTests   DiagnosticTest[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  familyId   String    @map("family_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model ConsentRecord {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  noticeVersion String   @map("notice_version")
+  purpose       String
+  granted       Boolean
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("consent_records")
+}
+
+model StudentProfile {
+  userId    String   @id @map("user_id") @db.Uuid
+  gradYear  Int?     @map("grad_year")
+  branch    String?
+  college   String?
+  language  String   @default("en")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("student_profiles")
+}
+
+// ------------------------------------------------------- Auth token store
+
+model AuthToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  purpose   String
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("auth_tokens")
+}
+
+// ------------------------------------------------------------------ Audit
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  objectType String?  @map("object_type")
+  objectId   String?  @map("object_id")
+  details    Json?
+  at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("audit_log")
+}
+
+// ------------------------------------------------- Taxonomy and blueprints
+
+model Topic {
+  id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentId String? @map("parent_id") @db.Uuid
+  slug     String  @unique
+  name     String
+  level    String // section | topic | subtopic | concept (CHECK in SQL)
+
+  parent   Topic?  @relation("TopicTree", fields: [parentId], references: [id])
+  children Topic[] @relation("TopicTree")
+
+  prerequisitesAsConcept ConceptPrerequisite[] @relation("PrereqConcept")
+  prerequisitesAsPrereq  ConceptPrerequisite[] @relation("PrereqTarget")
+  blueprintWeights       BlueprintTopicWeight[]
+  questions              Question[]
+  lessons                Lesson[]
+  patternRecords         CompanyPatternRecord[]
+  synonyms               TopicSynonym[]
+
+  @@map("topics")
+}
+
+model ConceptPrerequisite {
+  conceptId      String @map("concept_id") @db.Uuid
+  prerequisiteId String @map("prerequisite_id") @db.Uuid
+
+  concept      Topic @relation("PrereqConcept", fields: [conceptId], references: [id])
+  prerequisite Topic @relation("PrereqTarget", fields: [prerequisiteId], references: [id])
+
+  @@id([conceptId, prerequisiteId])
+  @@map("concept_prerequisites")
+}
+
+model Assessment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug      String   @unique
+  company   String
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  versions AssessmentVersion[]
+
+  @@map("assessments")
+}
+
+model AssessmentVersion {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assessmentId   String    @map("assessment_id") @db.Uuid
+  version        Int
+  isCurrent      Boolean   @default(true) @map("is_current")
+  validFrom      DateTime  @map("valid_from") @db.Date
+  lastVerifiedAt DateTime? @map("last_verified_at") @db.Date
+
+  assessment Assessment          @relation(fields: [assessmentId], references: [id])
+  sources    AssessmentSource[]
+  sections   BlueprintSection[]
+
+  @@unique([assessmentId, version])
+  @@map("assessment_versions")
+}
+
+model AssessmentSource {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  versionId       String    @map("version_id") @db.Uuid
+  sourceType      String    @map("source_type") // official|public|candidate_reported|pattern_inferred|assumption
+  reference       String?
+  confidence      String // low|medium|high
+  lastVerifiedAt  DateTime? @map("last_verified_at") @db.Date
+
+  version          AssessmentVersion    @relation(fields: [versionId], references: [id])
+  blueprintSources BlueprintSection[]   @relation("SectionSource")
+  weightSources    BlueprintTopicWeight[] @relation("WeightSource")
+
+  @@map("assessment_sources")
+}
+
+model BlueprintSection {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  versionId          String    @map("version_id") @db.Uuid
+  name               String
+  orderNo            Int       @map("order_no") @db.SmallInt
+  durationMin        Int?      @map("duration_min") @db.SmallInt
+  questionCountMin   Int?      @map("question_count_min") @db.SmallInt
+  questionCountMax   Int?      @map("question_count_max") @db.SmallInt
+  negativeMarking    Decimal?  @map("negative_marking") @db.Decimal(4, 2)
+  formatMix          Json?     @map("format_mix")
+  sourceId           String?   @map("source_id") @db.Uuid
+
+  version AssessmentVersion      @relation(fields: [versionId], references: [id])
+  source  AssessmentSource?      @relation("SectionSource", fields: [sourceId], references: [id])
+  weights BlueprintTopicWeight[]
+  assessmentTags QuestionAssessmentTag[]
+
+  @@map("blueprint_sections")
+}
+
+model BlueprintTopicWeight {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sectionId       String   @map("section_id") @db.Uuid
+  topicId         String   @map("topic_id") @db.Uuid
+  share           Decimal  @db.Decimal(4, 3)
+  difficultyBand  Int?     @map("difficulty_band") @db.SmallInt
+  paceSeconds     Int?     @map("pace_seconds")
+  sourceId        String?  @map("source_id") @db.Uuid
+
+  section BlueprintSection    @relation(fields: [sectionId], references: [id])
+  topic   Topic               @relation(fields: [topicId], references: [id])
+  source  AssessmentSource?   @relation("WeightSource", fields: [sourceId], references: [id])
+
+  @@unique([sectionId, topicId])
+  @@map("blueprint_topic_weights")
+}
+
+// ----------------------------------------------------------------- Content
+
+model ImportBatch {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceName   String    @map("source_name")
+  sourceRef    String    @map("source_ref")
+  parserVersion String   @map("parser_version")
+  accepted     Int       @default(0)
+  rejected     Int       @default(0)
+  duplicates   Int       @default(0)
+  createdBy    String?   @map("created_by") @db.Uuid
+  reversedAt   DateTime? @map("reversed_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  questions Question[]
+  patternRecords CompanyPatternRecord[]
+
+  @@map("import_batches")
+}
+
+enum QuestionFormat {
+  mcq
+  numerical
+}
+
+model Question {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  topicId          String         @map("topic_id") @db.Uuid
+  format           QuestionFormat @default(mcq)
+  stem             String
+  solution         String?
+  difficultyPrior  Int            @map("difficulty_prior") @db.SmallInt
+  eloRating        Float          @default(1000) @map("elo_rating")
+  expectedTimeMs   Int            @map("expected_time_ms")
+  language         String         @default("en")
+  numericAnswer    Decimal?       @map("numeric_answer") @db.Decimal(18, 6)
+  answerFormat     String?        @map("answer_format") // integer|decimal
+  decimalPlaces    Int?           @map("decimal_places") @db.SmallInt
+  tolerance        Decimal?       @db.Decimal(18, 6)
+  pool             String         @default("practice") // diagnostic|practice|reassessment
+  status           String         @default("draft") // draft|reviewed|published|retired
+  sourceName       String?        @map("source_name")
+  author           String?
+  llmAssisted      Boolean        @default(false) @map("llm_assisted")
+  importBatchId    String?        @map("import_batch_id") @db.Uuid
+  stemHash         String         @map("stem_hash")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  topic       Topic             @relation(fields: [topicId], references: [id])
+  importBatch ImportBatch?      @relation(fields: [importBatchId], references: [id])
+  options     QuestionOption[]
+  reviews     QuestionReview[]
+  assessmentTags QuestionAssessmentTag[]
+  attempts    QuestionAttempt[]
+
+  @@index([topicId, difficultyPrior, pool, status])
+  @@map("questions")
+}
+
+model QuestionOption {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId String  @map("question_id") @db.Uuid
+  text       String
+  isCorrect  Boolean @default(false) @map("is_correct")
+  trapTag    String? @map("trap_tag")
+  orderNo    Int     @map("order_no") @db.SmallInt
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  attempts QuestionAttempt[]
+
+  @@map("question_options")
+}
+
+model QuestionReview {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId  String   @map("question_id") @db.Uuid
+  reviewerId  String   @map("reviewer_id") @db.Uuid
+  decision    String // approve|reject
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  question Question @relation(fields: [questionId], references: [id])
+  reviewer User     @relation(fields: [reviewerId], references: [id])
+
+  @@unique([questionId, reviewerId])
+  @@map("question_reviews")
+}
+
+model Lesson {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  topicId    String    @map("topic_id") @db.Uuid
+  title      String
+  content    String
+  status     String    @default("draft")
+  reviewedBy String?   @map("reviewed_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  topic Topic @relation(fields: [topicId], references: [id])
+
+  @@map("lessons")
+}
+
+// ------------------------------------------------- PH-3 company data (12.5)
+
+model CompanyPatternRecord {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  importBatchId   String   @map("import_batch_id") @db.Uuid
+  company         String
+  roundName       String?  @map("round_name")
+  sectionName     String?  @map("section_name")
+  topicText       String?  @map("topic_text")
+  topicId         String?  @map("topic_id") @db.Uuid
+  questionCount   Int?     @map("question_count")
+  minutes         Int?
+  negativeMarking String?  @map("negative_marking")
+  difficultyNote  String?  @map("difficulty_note")
+  sourcePath      String   @map("source_path")
+  sourceCommit    String   @map("source_commit")
+  status          String   @default("extracted") // extracted|mapped|used|rejected
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  importBatch ImportBatch @relation(fields: [importBatchId], references: [id])
+  topic        Topic?     @relation(fields: [topicId], references: [id])
+
+  @@index([company, status])
+  @@map("company_pattern_records")
+}
+
+model TopicSynonym {
+  phrase  String @id
+  topicId String @map("topic_id") @db.Uuid
+
+  topic Topic @relation(fields: [topicId], references: [id])
+
+  @@map("topic_synonyms")
+}
+
+model QuestionAssessmentTag {
+  questionId String   @map("question_id") @db.Uuid
+  sectionId  String   @map("section_id") @db.Uuid
+  fit        Float
+  basis      String // topic_match|format_match|manual
+  computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  question Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  section  BlueprintSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, sectionId])
+  @@index([sectionId, fit(sort: Desc)])
+  @@map("question_assessment_tags")
+}
+
+model ErrorType {
+  id       Int     @id @db.SmallInt
+  code     String  @unique
+  label    String
+  category String
+
+  feedbacks   AttemptErrorFeedback[]
+  inferences  AttemptErrorInference[]
+
+  @@map("error_types")
+}
+
+// ------------------------------------------------- Attempts (PH-4)
+// DDL mirrors playbook Section 12.1: context_id is polymorphic
+// (practice_sessions.id for practice, diagnostic_tests.id later),
+// so it intentionally carries no foreign key.
+
+model PracticeSession {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  kind           String // practice|check|topic_test|mock
+  planItemId     String?   @map("plan_item_id") @db.Uuid
+  plannedMinutes Int?      @map("planned_minutes") @db.SmallInt
+  actualMinutes  Int?      @map("actual_minutes") @db.SmallInt
+  status         String    @default("active") // active|finished|expired
+  recalcStatus   String    @default("none") @map("recalc_status") // none|pending|done|failed
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@map("practice_sessions")
+}
+
+model QuestionAttempt {
+  id               String   @id @db.Uuid // client-generated idempotency key
+  userId           String   @map("user_id") @db.Uuid
+  questionId       String   @map("question_id") @db.Uuid
+  contextType      String   @map("context_type") // diagnostic|practice|reassessment
+  contextId        String   @map("context_id") @db.Uuid
+  shownAt          DateTime @map("shown_at") @db.Timestamptz(6)
+  answeredAt       DateTime @map("answered_at") @db.Timestamptz(6)
+  timeMs           Int?     @map("time_ms")
+  selectedOptionId String?  @map("selected_option_id") @db.Uuid
+  numericInput     Decimal? @map("numeric_input") @db.Decimal(18, 6)
+  roundingSuspected Boolean @default(false) @map("rounding_suspected")
+  isCorrect        Boolean? @map("is_correct")
+  skipped          Boolean  @default(false)
+  sequenceNo       Int      @map("sequence_no")
+  revisitCount     Int      @default(0) @map("revisit_count") @db.SmallInt
+  answerChanges    Int      @default(0) @map("answer_changes") @db.SmallInt
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question       Question        @relation(fields: [questionId], references: [id])
+  selectedOption QuestionOption? @relation(fields: [selectedOptionId], references: [id])
+  errorFeedback  AttemptErrorFeedback?
+  errorInference AttemptErrorInference?
+
+  @@index([userId, answeredAt])
+  @@index([contextType, contextId])
+  @@map("question_attempts")
+}
+
+// ------------------------------------------------- Diagnostic (PH-5)
+
+model DiagnosticTest {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  mode            String // standard|express
+  status          String    @default("active") // active|paused|submitted|partial
+  questionIds     String[]  @map("question_ids") @db.Uuid
+  pauseCount      Int       @default(0) @map("pause_count") @db.SmallInt
+  startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  submittedAt     DateTime? @map("submitted_at") @db.Timestamptz(6)
+  lastActivityAt  DateTime  @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  result  DiagnosticResult?
+
+  @@index([userId, status])
+  @@map("diagnostic_tests")
+}
+
+model DiagnosticResult {
+  diagnosticId String   @id @map("diagnostic_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  summary      Json
+  engineVersion String  @map("engine_version")
+  computedAt   DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  diagnostic DiagnosticTest @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
+
+  @@map("diagnostic_results")
+}
+
+model AttemptErrorFeedback {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attemptId    String   @unique @map("attempt_id") @db.Uuid
+  errorTypeId  Int      @map("error_type_id") @db.SmallInt
+  freeText     String?  @map("free_text")
+  reportedAt   DateTime @default(now()) @map("reported_at") @db.Timestamptz(6)
+
+  attempt   QuestionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  errorType ErrorType       @relation(fields: [errorTypeId], references: [id])
+
+  @@map("attempt_error_feedback")
+}
+
+model AttemptErrorInference {
+  attemptId   String   @id @map("attempt_id") @db.Uuid
+  errorTypeId Int?     @map("error_type_id") @db.SmallInt
+  method      String // reported|rule
+  confidence  Float
+  conflict    Boolean  @default(false)
+
+  attempt   QuestionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  errorType ErrorType?      @relation(fields: [errorTypeId], references: [id])
+
+  @@map("attempt_error_inference")
+}

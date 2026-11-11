@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Pre-commit: lint-staged runs ESLint --fix and Prettier on staged files.
+pnpm exec lint-staged

@@ -1,0 +1,38 @@
+# Local development services (playbook Sections 13, 26, 27).
+# PostgreSQL 18 and Redis 8. Redis uses append-only persistence (everysec) so
+# the attempt-stream behaviour matches production (Section 15.2).
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aptiva
+      POSTGRES_PASSWORD: aptiva
+      POSTGRES_DB: aptiva
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aptiva -d aptiva']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'everysec']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:

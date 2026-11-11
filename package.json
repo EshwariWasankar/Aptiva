@@ -1,0 +1,48 @@
+{
+  "name": "aptiva",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Aptiva \u00e2\u20ac\u201d planning layer above question banks for placement aptitude preparation",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @aptiva/ingest build && pnpm --filter @aptiva/engine build && pnpm -r --parallel --if-present run dev",
+    "build": "pnpm --filter @aptiva/ingest build && pnpm --filter @aptiva/engine build && pnpm -r --if-present run build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "pnpm --filter @aptiva/ingest build && pnpm --filter @aptiva/engine build && pnpm -r --if-present run test",
+    "test:integration": "pnpm --filter @aptiva/ingest build && pnpm --filter @aptiva/engine build && pnpm --filter @aptiva/api run test:integration",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "postinstall": "prisma generate",
+    "prepare": "husky",
+    "db:seed-diagnostic": "tsx prisma/seed-diagnostic.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "dotenv": "18.0.9",
+    "eslint": "9.39.5",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.0",
+    "prettier": "3.9.10",
+    "prisma": "7.10.1",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mts,cts}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,jsonc,md,yml,yaml,css,html}": [
+      "prettier --write"
+    ]
+  }
+}

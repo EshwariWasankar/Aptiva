@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "rootDir": "../..",
+    "types": ["node"],
+    "paths": {
+      "@aptiva/shared": ["../../packages/shared/src/index.ts"],
+      "@aptiva/engine": ["../../packages/engine/src/index.ts"]
+    }
+  },
+  "include": ["src", "test", "vitest.config.ts", "vitest.integration.config.ts"]
+}

@@ -1,0 +1,8 @@
+node_modules
+dist
+.next
+coverage
+apps/api/generated
+pnpm-lock.yaml
+playwright-report
+test-results

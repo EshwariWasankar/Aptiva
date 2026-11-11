@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# Generated code
+apps/api/generated/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Data (raw datasets stay out of git; only the checksum manifest is committed)
+data/raw/*
+!data/raw/MANIFEST.sha256
+
+# Test and tooling output
+coverage/
+playwright-report/
+test-results/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
